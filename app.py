@@ -50,6 +50,13 @@ st.markdown("""
         color: #fbbf24 !important;
         border-bottom-color: #fbbf24 !important;
     }
+    .portfolio-preview-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 25px;
+        border-radius: 15px;
+        margin: 20px 0;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -360,9 +367,7 @@ def main():
         st.rerun()
     
     if page == "Dashboard":
-        st.title("📈 Profit and Loss Analysis")
-            
-        # Calculate statistics
+        # Calculate statistics FIRST
         stats = calculate_statistics(data, futures_data)
         
         # Calculate total unrealized P&L from holdings
@@ -377,6 +382,31 @@ def main():
         total_pnl = realized_pnl + total_unrealized_pnl
         current_portfolio = initial_balance + total_pnl
         portfolio_change_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
+        
+        # PORTFOLIO VALUE PREVIEW - MOVED TO TOP
+        st.markdown('<div class="portfolio-preview-card">', unsafe_allow_html=True)
+        st.markdown("### 💎 Portfolio Value Overview")
+        
+        preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
+        with preview_col1:
+            st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
+        with preview_col2:
+            st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
+                     delta_color="normal" if realized_pnl >= 0 else "inverse")
+        with preview_col3:
+            st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
+                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
+        with preview_col4:
+            st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
+                     delta=f"{portfolio_change_pct:+.2f}%",
+                     delta_color="normal" if total_pnl >= 0 else "inverse")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # NOW SHOW MAIN TITLE
+        st.title("📈 Profit and Loss Analysis")
         
         # Top metrics - Row 1
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -409,26 +439,28 @@ def main():
             df_holdings = pd.DataFrame(holdings_data)
             st.dataframe(df_holdings, use_container_width=True, hide_index=True)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🗑️ Clear Holdings Data", type="secondary", key="clear_holdings"):
-                    if st.session_state.get('confirm_delete_holdings', False):
-                        save_holdings_data([])
-                        st.session_state.confirm_delete_holdings = False
-                        st.success("Holdings data berhasil dihapus!")
-                        st.rerun()
-                    else:
-                        st.session_state.confirm_delete_holdings = True
-                        st.warning("Klik sekali lagi untuk konfirmasi")
-            
-            with col2:
-                csv_holdings = df_holdings.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Holdings CSV",
-                    data=csv_holdings,
-                    file_name=f"holdings_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
+            # Admin only buttons
+            if st.session_state.user_role == "admin":
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🗑️ Clear Holdings Data", type="secondary", key="clear_holdings"):
+                        if st.session_state.get('confirm_delete_holdings', False):
+                            save_holdings_data([])
+                            st.session_state.confirm_delete_holdings = False
+                            st.success("Holdings data berhasil dihapus!")
+                            st.rerun()
+                        else:
+                            st.session_state.confirm_delete_holdings = True
+                            st.warning("Klik sekali lagi untuk konfirmasi")
+                
+                with col2:
+                    csv_holdings = df_holdings.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Holdings CSV",
+                        data=csv_holdings,
+                        file_name=f"holdings_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
         else:
             st.info("Belum ada data holdings")
         
@@ -965,18 +997,31 @@ def main():
         st.markdown("### 📈 Portfolio Value Preview")
         stats = calculate_statistics(data, futures_data)
         
-        preview_col1, preview_col2, preview_col3 = st.columns(3)
+        # Calculate unrealized P&L
+        total_unrealized_pnl = 0
+        if holdings_data:
+            for holding in holdings_data:
+                if holding.get('status') == 'open':
+                    total_unrealized_pnl += holding.get('unrealized_pnl', 0)
+        
+        realized_pnl = stats['net_pnl']
+        total_pnl = realized_pnl + total_unrealized_pnl
+        portfolio_value = new_balance + total_pnl
+        change_pct = ((total_pnl / new_balance) * 100) if new_balance > 0 else 0
+        
+        preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
         with preview_col1:
             st.metric("Initial Balance", f"${new_balance:,.2f}")
         with preview_col2:
-            st.metric("Net P&L", f"${stats['net_pnl']:,.2f}", 
-                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+            st.metric("Realized P&L", f"${realized_pnl:,.2f}", 
+                     delta_color="normal" if realized_pnl >= 0 else "inverse")
         with preview_col3:
-            portfolio_value = new_balance + stats['net_pnl']
-            change_pct = ((stats['net_pnl'] / new_balance) * 100) if new_balance > 0 else 0
+            st.metric("Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
+                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
+        with preview_col4:
             st.metric("Portfolio Value", f"${portfolio_value:,.2f}", 
                      delta=f"{change_pct:+.2f}%",
-                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+                     delta_color="normal" if total_pnl >= 0 else "inverse")
     
     else:  # Data Management
         # Check if user is admin
