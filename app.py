@@ -204,24 +204,12 @@ def calculate_statistics(data, futures_data):
     }
 
 # Fungsi untuk membuat calendar view
-def create_calendar_view(data, futures_data, year, month):
-    # Gabungkan data spot dan futures
-    all_entries = []
-    
-    if data:
-        df_spot = pd.DataFrame(data)
-        df_spot['date'] = pd.to_datetime(df_spot['date'])
-        all_entries.append(df_spot)
-    
-    if futures_data:
-        df_futures = pd.DataFrame(futures_data)
-        df_futures['date'] = pd.to_datetime(df_futures['date'])
-        all_entries.append(df_futures)
-    
-    if not all_entries:
+def create_calendar_view(data, year, month, title="Calendar View"):
+    if not data:
         return None
     
-    df = pd.concat(all_entries, ignore_index=True)
+    df = pd.DataFrame(data)
+    df['date'] = pd.to_datetime(df['date'])
     daily_pnl = df.groupby('date')['pnl'].sum().reset_index()
     
     # Filter by year and month
@@ -300,8 +288,14 @@ def create_calendar_view(data, futures_data, year, month):
         height=500,
         plot_bgcolor='#1e1e2e',
         paper_bgcolor='#1e1e2e',
-        margin=dict(l=20, r=20, t=40, b=20),
-        showlegend=False
+        margin=dict(l=20, r=20, t=60, b=20),
+        showlegend=False,
+        title=dict(
+            text=title,
+            font=dict(size=18, color='#ffffff'),
+            x=0.5,
+            xanchor='center'
+        )
     )
     
     return fig
@@ -433,16 +427,29 @@ def main():
             
             st.divider()
             
-            # Calendar View (gabungan spot + futures)
-            st.markdown("### 📅 Calendar View (All Trades)")
-            if data or futures_data:
-                fig = create_calendar_view(data, futures_data, selected_year, selected_month)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+            # Calendar View - Futures
+            st.markdown("### 📅 Calendar View - Futures Trading")
+            if futures_data:
+                fig_futures = create_calendar_view(futures_data, selected_year, selected_month, "Futures Trading Calendar")
+                if fig_futures:
+                    st.plotly_chart(fig_futures, use_container_width=True)
                 else:
-                    st.info("Tidak ada data untuk bulan ini")
+                    st.info("Tidak ada data futures untuk bulan ini")
             else:
-                st.info("Belum ada data trading.")
+                st.info("Belum ada data futures")
+            
+            st.divider()
+            
+            # Calendar View - Spot
+            st.markdown("### 📅 Calendar View - Spot Trading")
+            if data:
+                fig_spot = create_calendar_view(data, selected_year, selected_month, "Spot Trading Calendar")
+                if fig_spot:
+                    st.plotly_chart(fig_spot, use_container_width=True)
+                else:
+                    st.info("Tidak ada data spot untuk bulan ini")
+            else:
+                st.info("Belum ada data spot")
         
         with tab2:
             st.subheader("📋 Trading History")
