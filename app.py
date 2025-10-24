@@ -124,37 +124,87 @@ def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.user_role = None
+        st.session_state.login_page = "select"  # select, admin, guest
     
     if not st.session_state.authenticated:
-        st.title("🔐 Login")
+        # Landing page - pilih role
+        if st.session_state.login_page == "select":
+            st.title("🔐 Trading Journal Login")
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown("### Welcome to Trading Journal")
+                st.markdown("---")
+                
+                st.markdown("#### 👤 Login as Admin")
+                st.info("✅ Full access to all features\n\n✅ Add/Edit/Delete entries\n\n✅ Manage portfolio & holdings\n\n✅ View all analytics")
+                if st.button("🔑 Continue as Admin", use_container_width=True, type="primary"):
+                    st.session_state.login_page = "admin"
+                    st.rerun()
+                
+                st.markdown("---")
+                
+                st.markdown("#### 👁️ Login as Guest")
+                st.info("📊 View-only access\n\n📈 See dashboard & analytics\n\n🔒 Cannot modify data")
+                if st.button("👁️ Continue as Guest", use_container_width=True):
+                    st.session_state.login_page = "guest"
+                    st.rerun()
         
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("### Welcome to Ruastatement")
-            st.info("👤 **Admin**: Full access (entry & view)\n\n👁️ **Guest**: View only")
+        # Admin login page
+        elif st.session_state.login_page == "admin":
+            st.title("🔑 Admin Login")
             
-            password = st.text_input("Enter Password", type="password", placeholder="")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("🔑 Login as Admin", use_container_width=True):
-                    if password == ADMIN_PASSWORD:
-                        st.session_state.authenticated = True
-                        st.session_state.user_role = "admin"
-                        st.success("✅ Admin login successful!")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown("### Administrator Access")
+                st.warning("⚠️ This area is for authorized administrators only")
+                
+                password = st.text_input("Admin Password", type="password", placeholder="Enter admin password", key="admin_pass")
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("🔓 Login", use_container_width=True, type="primary"):
+                        if password == ADMIN_PASSWORD:
+                            st.session_state.authenticated = True
+                            st.session_state.user_role = "admin"
+                            st.success("✅ Admin login successful!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid admin password!")
+                
+                with col_btn2:
+                    if st.button("⬅️ Back", use_container_width=True):
+                        st.session_state.login_page = "select"
                         st.rerun()
-                    else:
-                        st.error("❌ Invalid admin password!")
+        
+        # Guest login page
+        elif st.session_state.login_page == "guest":
+            st.title("👁️ Guest Login")
             
-            with col_btn2:
-                if st.button("👁️ Login as Guest", use_container_width=True):
-                    if password == GUEST_PASSWORD:
-                        st.session_state.authenticated = True
-                        st.session_state.user_role = "guest"
-                        st.success("✅ Guest login successful!")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown("### Guest Access")
+                st.info("💡 Guest users have read-only access to view trading analytics and performance")
+                
+                password = st.text_input("Guest Password", type="password", placeholder="Enter guest password", key="guest_pass")
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("🔓 Login", use_container_width=True, type="primary"):
+                        if password == GUEST_PASSWORD:
+                            st.session_state.authenticated = True
+                            st.session_state.user_role = "guest"
+                            st.success("✅ Guest login successful!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid guest password!")
+                
+                with col_btn2:
+                    if st.button("⬅️ Back", use_container_width=True):
+                        st.session_state.login_page = "select"
                         st.rerun()
-                    else:
-                        st.error("❌ Invalid guest password!")
+        
         st.stop()
 
 # Fungsi untuk menghitung statistik
