@@ -63,11 +63,6 @@ HOLDINGS_FILE = "holdings_data.json"
 try:
     ADMIN_PASSWORD = st.secrets["passwords"]["admin"]
     GUEST_PASSWORD = st.secrets["passwords"]["guest"]
-except:
-    # Fallback for local development
-    ADMIN_PASSWORD = "000000"
-    GUEST_PASSWORD = "123456"
-    st.warning("⚠️ Using default passwords. Please configure secrets for production!")
 
 # Fungsi untuk load data
 def load_data():
@@ -360,7 +355,7 @@ def main():
         st.rerun()
     
     if page == "Dashboard":
-        st.title("📈 Overview PNL)
+        st.title("📈 Overview PNL")
         
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
