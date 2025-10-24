@@ -385,7 +385,7 @@ def main():
         
         # PORTFOLIO VALUE PREVIEW - MOVED TO TOP
         st.markdown('<div class="portfolio-preview-card">', unsafe_allow_html=True)
-        st.markdown("### 💎 Portfolio Value Overview")
+        st.markdown("# 💎 Portfolio Value Overview")
         
         preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
         with preview_col1:
