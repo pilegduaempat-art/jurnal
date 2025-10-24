@@ -139,11 +139,11 @@ def check_password():
     if not st.session_state.authenticated:
         # Landing page - pilih role
         if st.session_state.login_page == "select":
-            st.title("🔐 Trading Journal Login")
+            st.title("🔐 Ruastatement Login")
             
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                st.markdown("### Welcome to Trading Journal")
+                st.markdown("### Welcome to Ruastatement")
                 st.markdown("---")
                 
                 st.markdown("#### 👤 Login as Admin")
