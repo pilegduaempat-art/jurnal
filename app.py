@@ -465,6 +465,120 @@ def main():
         
         st.divider()
         
+        # PORTFOLIO HISTORY CHART - NEW
+        st.subheader("📈 Portfolio Performance History")
+        
+        # Combine all data for portfolio history
+        portfolio_history = []
+        
+        # Get all dates from spot and futures
+        all_dates = set()
+        if data:
+            df_spot = pd.DataFrame(data)
+            df_spot['date'] = pd.to_datetime(df_spot['date'])
+            all_dates.update(df_spot['date'].dt.date.tolist())
+        
+        if futures_data:
+            df_futures = pd.DataFrame(futures_data)
+            df_futures['date'] = pd.to_datetime(df_futures['date'])
+            all_dates.update(df_futures['date'].dt.date.tolist())
+        
+        if all_dates:
+            # Sort dates
+            sorted_dates = sorted(list(all_dates))
+            
+            # Calculate cumulative portfolio value
+            cumulative_pnl = 0
+            for date in sorted_dates:
+                date_dt = pd.Timestamp(date)
+                
+                # Get PNL for this date from spot
+                if data:
+                    df_spot = pd.DataFrame(data)
+                    df_spot['date'] = pd.to_datetime(df_spot['date'])
+                    spot_pnl = df_spot[df_spot['date'].dt.date == date]['pnl'].sum()
+                else:
+                    spot_pnl = 0
+                
+                # Get PNL for this date from futures
+                if futures_data:
+                    df_futures = pd.DataFrame(futures_data)
+                    df_futures['date'] = pd.to_datetime(df_futures['date'])
+                    futures_pnl = df_futures[df_futures['date'].dt.date == date]['pnl'].sum()
+                else:
+                    futures_pnl = 0
+                
+                daily_pnl = spot_pnl + futures_pnl
+                cumulative_pnl += daily_pnl
+                
+                portfolio_history.append({
+                    'date': date,
+                    'daily_pnl': daily_pnl,
+                    'cumulative_pnl': cumulative_pnl,
+                    'portfolio_value': initial_balance + cumulative_pnl
+                })
+            
+            # Create DataFrame
+            df_portfolio = pd.DataFrame(portfolio_history)
+            
+            # Create line chart
+            fig_portfolio = go.Figure()
+            
+            # Add portfolio value line
+            fig_portfolio.add_trace(go.Scatter(
+                x=df_portfolio['date'],
+                y=df_portfolio['portfolio_value'],
+                mode='lines+markers',
+                name='Portfolio Value',
+                line=dict(color='#10b981', width=3),
+                marker=dict(size=6),
+                fill='tonexty',
+                fillcolor='rgba(16, 185, 129, 0.1)'
+            ))
+            
+            # Add initial balance reference line
+            fig_portfolio.add_hline(
+                y=initial_balance,
+                line_dash="dash",
+                line_color="#fbbf24",
+                annotation_text=f"Initial Balance: ${initial_balance:,.2f}",
+                annotation_position="right"
+            )
+            
+            fig_portfolio.update_layout(
+                title="Daily Portfolio Value",
+                xaxis_title="Date",
+                yaxis_title="Portfolio Value (USD)",
+                plot_bgcolor='#1e1e2e',
+                paper_bgcolor='#1e1e2e',
+                font_color='#ffffff',
+                hovermode='x unified',
+                height=400
+            )
+            
+            st.plotly_chart(fig_portfolio, use_container_width=True)
+            
+            # Show stats
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            with col_stat1:
+                max_portfolio = df_portfolio['portfolio_value'].max()
+                st.metric("Peak Portfolio", f"${max_portfolio:,.2f}")
+            with col_stat2:
+                min_portfolio = df_portfolio['portfolio_value'].min()
+                st.metric("Lowest Portfolio", f"${min_portfolio:,.2f}")
+            with col_stat3:
+                best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
+                st.metric("Best Day", f"+${best_day['daily_pnl']:,.2f}", 
+                         delta=best_day['date'].strftime('%Y-%m-%d'))
+            with col_stat4:
+                worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
+                st.metric("Worst Day", f"${worst_day['daily_pnl']:,.2f}",
+                         delta=worst_day['date'].strftime('%Y-%m-%d'))
+        else:
+            st.info("📊 Belum ada data trading untuk menampilkan history portfolio")
+        
+        st.divider()
+        
         # NOW SHOW MAIN TITLE
         st.title("📈 Profit and Loss Analysis")
         
@@ -632,6 +746,190 @@ def main():
         
         with tab2:
             st.subheader("📋 Trading History")
+            
+            # CHART SECTION - NEW
+            st.markdown("### 📈 Performance Charts")
+            
+            # Create tabs for different charts
+            chart_tab1, chart_tab2, chart_tab3 = st.tabs(["💹 Futures P&L", "💰 Spot P&L", "📊 Floating P&L"])
+            
+            with chart_tab1:
+                st.markdown("#### Futures Trading Performance")
+                if futures_data:
+                    df_futures_chart = pd.DataFrame(futures_data)
+                    df_futures_chart['date'] = pd.to_datetime(df_futures_chart['date'])
+                    df_futures_chart = df_futures_chart.sort_values('date')
+                    
+                    # Calculate cumulative
+                    df_futures_chart['cumulative_pnl'] = df_futures_chart['pnl'].cumsum()
+                    
+                    # Create chart
+                    fig_futures = go.Figure()
+                    
+                    # Daily P&L bars
+                    colors = ['#10b981' if x > 0 else '#ef4444' for x in df_futures_chart['pnl']]
+                    fig_futures.add_trace(go.Bar(
+                        x=df_futures_chart['date'],
+                        y=df_futures_chart['pnl'],
+                        name='Daily P&L',
+                        marker_color=colors,
+                        yaxis='y'
+                    ))
+                    
+                    # Cumulative P&L line
+                    fig_futures.add_trace(go.Scatter(
+                        x=df_futures_chart['date'],
+                        y=df_futures_chart['cumulative_pnl'],
+                        name='Cumulative P&L',
+                        line=dict(color='#fbbf24', width=3),
+                        yaxis='y2'
+                    ))
+                    
+                    fig_futures.update_layout(
+                        title="Futures: Daily & Cumulative P&L",
+                        xaxis_title="Date",
+                        yaxis=dict(title="Daily P&L (USD)", side='left'),
+                        yaxis2=dict(title="Cumulative P&L (USD)", side='right', overlaying='y'),
+                        plot_bgcolor='#1e1e2e',
+                        paper_bgcolor='#1e1e2e',
+                        font_color='#ffffff',
+                        hovermode='x unified',
+                        height=400,
+                        legend=dict(x=0.01, y=0.99)
+                    )
+                    
+                    st.plotly_chart(fig_futures, use_container_width=True)
+                    
+                    # Stats
+                    col_f1, col_f2, col_f3 = st.columns(3)
+                    with col_f1:
+                        total_futures = df_futures_chart['pnl'].sum()
+                        st.metric("Total Futures P&L", f"${total_futures:,.2f}")
+                    with col_f2:
+                        avg_futures = df_futures_chart['pnl'].mean()
+                        st.metric("Average Daily P&L", f"${avg_futures:,.2f}")
+                    with col_f3:
+                        win_rate_futures = (df_futures_chart['pnl'] > 0).sum() / len(df_futures_chart) * 100
+                        st.metric("Win Rate", f"{win_rate_futures:.1f}%")
+                else:
+                    st.info("Belum ada data futures untuk ditampilkan")
+            
+            with chart_tab2:
+                st.markdown("#### Spot Trading Performance")
+                if data:
+                    df_spot_chart = pd.DataFrame(data)
+                    df_spot_chart['date'] = pd.to_datetime(df_spot_chart['date'])
+                    
+                    # Group by date
+                    df_spot_daily = df_spot_chart.groupby('date')['pnl'].sum().reset_index()
+                    df_spot_daily = df_spot_daily.sort_values('date')
+                    
+                    # Calculate cumulative
+                    df_spot_daily['cumulative_pnl'] = df_spot_daily['pnl'].cumsum()
+                    
+                    # Create chart
+                    fig_spot = go.Figure()
+                    
+                    # Daily P&L bars
+                    colors = ['#10b981' if x > 0 else '#ef4444' for x in df_spot_daily['pnl']]
+                    fig_spot.add_trace(go.Bar(
+                        x=df_spot_daily['date'],
+                        y=df_spot_daily['pnl'],
+                        name='Daily P&L',
+                        marker_color=colors,
+                        yaxis='y'
+                    ))
+                    
+                    # Cumulative P&L line
+                    fig_spot.add_trace(go.Scatter(
+                        x=df_spot_daily['date'],
+                        y=df_spot_daily['cumulative_pnl'],
+                        name='Cumulative P&L',
+                        line=dict(color='#fbbf24', width=3),
+                        yaxis='y2'
+                    ))
+                    
+                    fig_spot.update_layout(
+                        title="Spot: Daily & Cumulative P&L",
+                        xaxis_title="Date",
+                        yaxis=dict(title="Daily P&L (USD)", side='left'),
+                        yaxis2=dict(title="Cumulative P&L (USD)", side='right', overlaying='y'),
+                        plot_bgcolor='#1e1e2e',
+                        paper_bgcolor='#1e1e2e',
+                        font_color='#ffffff',
+                        hovermode='x unified',
+                        height=400,
+                        legend=dict(x=0.01, y=0.99)
+                    )
+                    
+                    st.plotly_chart(fig_spot, use_container_width=True)
+                    
+                    # Stats
+                    col_s1, col_s2, col_s3 = st.columns(3)
+                    with col_s1:
+                        total_spot = df_spot_daily['pnl'].sum()
+                        st.metric("Total Spot P&L", f"${total_spot:,.2f}")
+                    with col_s2:
+                        avg_spot = df_spot_daily['pnl'].mean()
+                        st.metric("Average Daily P&L", f"${avg_spot:,.2f}")
+                    with col_s3:
+                        win_rate_spot = (df_spot_daily['pnl'] > 0).sum() / len(df_spot_daily) * 100
+                        st.metric("Win Rate", f"{win_rate_spot:.1f}%")
+                else:
+                    st.info("Belum ada data spot untuk ditampilkan")
+            
+            with chart_tab3:
+                st.markdown("#### Floating Positions Performance")
+                if holdings_data:
+                    open_holdings = [h for h in holdings_data if h.get('status') == 'open']
+                    if open_holdings:
+                        df_float = pd.DataFrame(open_holdings)
+                        
+                        # Create chart - P&L by symbol
+                        fig_float = go.Figure()
+                        
+                        colors = ['#10b981' if x > 0 else '#ef4444' for x in df_float['unrealized_pnl']]
+                        fig_float.add_trace(go.Bar(
+                            x=df_float['symbol'],
+                            y=df_float['unrealized_pnl'],
+                            name='Unrealized P&L',
+                            marker_color=colors,
+                            text=df_float['unrealized_pnl'].apply(lambda x: f"${x:,.2f}"),
+                            textposition='outside'
+                        ))
+                        
+                        fig_float.update_layout(
+                            title="Floating: Unrealized P&L by Symbol",
+                            xaxis_title="Symbol",
+                            yaxis_title="Unrealized P&L (USD)",
+                            plot_bgcolor='#1e1e2e',
+                            paper_bgcolor='#1e1e2e',
+                            font_color='#ffffff',
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig_float, use_container_width=True)
+                        
+                        # Stats
+                        col_fl1, col_fl2, col_fl3 = st.columns(3)
+                        with col_fl1:
+                            total_float = df_float['unrealized_pnl'].sum()
+                            st.metric("Total Unrealized P&L", f"${total_float:,.2f}")
+                        with col_fl2:
+                            profitable = (df_float['unrealized_pnl'] > 0).sum()
+                            st.metric("Profitable Positions", f"{profitable}/{len(df_float)}")
+                        with col_fl3:
+                            total_value = (df_float['quantity'] * df_float['current_price']).sum()
+                            st.metric("Total Holdings Value", f"${total_value:,.2f}")
+                    else:
+                        st.info("Tidak ada posisi floating terbuka")
+                else:
+                    st.info("Belum ada data holdings untuk ditampilkan")
+            
+            st.divider()
+            
+            # EXISTING TABLES SECTION
+            st.markdown("### 📊 Detailed Data Tables")
             
             # Holdings/Open Positions
             st.markdown("#### 📊 Open Positions (Floating)")
