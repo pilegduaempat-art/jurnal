@@ -56,8 +56,16 @@ st.markdown("""
 # File untuk menyimpan data
 DATA_FILE = "trading_data.json"
 FUTURES_FILE = "futures_data.json"
-ADMIN_PASSWORD = "000000"
-GUEST_PASSWORD = "123456"
+
+# Load passwords from Streamlit secrets (production) or fallback (development)
+try:
+    ADMIN_PASSWORD = st.secrets["passwords"]["admin"]
+    GUEST_PASSWORD = st.secrets["passwords"]["guest"]
+except:
+    # Fallback for local development
+    ADMIN_PASSWORD = "000000"
+    GUEST_PASSWORD = "123456"
+    st.warning("⚠️ Using default passwords. Please configure secrets for production!")
 
 # Fungsi untuk load data
 def load_data():
