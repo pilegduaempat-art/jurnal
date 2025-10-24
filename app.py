@@ -645,7 +645,7 @@ def main():
         with col5:
             st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}")
         with col6:
-            st.metric("Losing Days", f"{stats['losing_days']} Days")
+            st.metric("Worst Trade", f"{stats['losing_days']} Days")
         with col7:
             st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
         with col8:
@@ -658,7 +658,7 @@ def main():
         with col9:
             st.metric("PNL Rate", f"{stats['win_rate']:.2f} %")
         with col10:
-            st.metric("Best Days", f"{stats['winning_days']} Days")
+            st.metric("Best Trade", f"{stats['winning_days']} Days")
         with col11:
             st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
         
