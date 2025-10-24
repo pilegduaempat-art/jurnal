@@ -26,7 +26,6 @@ st.markdown("""
     }
     div[data-testid="stMetricLabel"] {
         color: #a0a0b0;
-        font-size: 14px;
     }
     .profit-card {
         background-color: #2d2d3d;
@@ -38,17 +37,14 @@ st.markdown("""
         color: #ffffff !important;
     }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 24px;
         background-color: #2d2d3d;
         padding: 10px;
         border-radius: 10px;
-        flex-wrap: wrap;
     }
     .stTabs [data-baseweb="tab"] {
         color: #a0a0b0;
         font-weight: 600;
-        font-size: 14px;
-        padding: 8px 12px;
     }
     .stTabs [aria-selected="true"] {
         color: #fbbf24 !important;
@@ -56,79 +52,20 @@ st.markdown("""
     }
     .portfolio-preview-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
+        padding: 25px;
         border-radius: 15px;
-        margin: 15px 0;
+        margin: 20px 0;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
     .portfolio-preview-card div[data-testid="stMetricValue"] {
-        font-size: 28px !important;
+        font-size: 32px !important;
         font-weight: 700 !important;
         color: #ffffff !important;
     }
     .portfolio-preview-card div[data-testid="stMetricLabel"] {
-        font-size: 14px !important;
+        font-size: 16px !important;
         font-weight: 600 !important;
         color: #f0f0f0 !important;
-    }
-    
-    /* Mobile Responsive Styles */
-    @media (max-width: 768px) {
-        div[data-testid="stMetricValue"] {
-            font-size: 20px !important;
-        }
-        div[data-testid="stMetricLabel"] {
-            font-size: 12px !important;
-        }
-        .portfolio-preview-card div[data-testid="stMetricValue"] {
-            font-size: 22px !important;
-        }
-        .portfolio-preview-card div[data-testid="stMetricLabel"] {
-            font-size: 12px !important;
-        }
-        .portfolio-preview-card {
-            padding: 15px;
-        }
-        h1 {
-            font-size: 24px !important;
-        }
-        h2 {
-            font-size: 20px !important;
-        }
-        h3 {
-            font-size: 18px !important;
-        }
-        .stTabs [data-baseweb="tab"] {
-            font-size: 12px;
-            padding: 6px 10px;
-        }
-        /* Stack columns on mobile */
-        div[data-testid="column"] {
-            min-width: 100% !important;
-        }
-    }
-    
-    /* Button improvements for mobile */
-    .stButton button {
-        width: 100%;
-        padding: 12px;
-        font-size: 14px;
-    }
-    
-    /* Form improvements */
-    .stTextInput input, .stNumberInput input, .stTextArea textarea {
-        font-size: 16px !important;
-    }
-    
-    /* Sidebar improvements */
-    section[data-testid="stSidebar"] {
-        min-width: 250px;
-    }
-    
-    @media (max-width: 768px) {
-        section[data-testid="stSidebar"] {
-            min-width: 200px;
-        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -474,18 +411,6 @@ def main():
     # Sidebar untuk navigasi
     st.sidebar.title("📊 Trading Journal")
     
-    # Mobile view toggle (hidden checkbox for auto-detection via CSS)
-    # Detect mobile by checking viewport width via session state
-    if 'mobile_view' not in st.session_state:
-        st.session_state.mobile_view = False
-    
-    # Manual toggle for testing
-    with st.sidebar.expander("⚙️ Display Settings"):
-        mobile_mode = st.checkbox("Mobile View", value=st.session_state.mobile_view)
-        if mobile_mode != st.session_state.mobile_view:
-            st.session_state.mobile_view = mobile_mode
-            st.rerun()
-    
     # Show user role
     if st.session_state.user_role == "admin":
         st.sidebar.success("👤 Logged in as: **Admin**")
@@ -522,35 +447,19 @@ def main():
         st.markdown('<div class="portfolio-preview-card">', unsafe_allow_html=True)
         st.markdown("# 💎 Portfolio Value Overview")
         
-        # Responsive columns for mobile
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns layout
-            preview_col1, preview_col2 = st.columns(2)
-            with preview_col1:
-                st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
-                st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with preview_col2:
-                st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-                st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
-                         delta=f"{portfolio_change_pct:+.2f}%",
-                         delta_color="normal" if total_pnl >= 0 else "inverse")
-        else:
-            # Desktop: 4 columns layout
-            preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
-            with preview_col1:
-                st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
-            with preview_col2:
-                st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-            with preview_col3:
-                st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with preview_col4:
-                st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
-                         delta=f"{portfolio_change_pct:+.2f}%",
-                         delta_color="normal" if total_pnl >= 0 else "inverse")
+        preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
+        with preview_col1:
+            st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
+        with preview_col2:
+            st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
+                     delta_color="normal" if realized_pnl >= 0 else "inverse")
+        with preview_col3:
+            st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
+                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
+        with preview_col4:
+            st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
+                     delta=f"{portfolio_change_pct:+.2f}%",
+                     delta_color="normal" if total_pnl >= 0 else "inverse")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -649,39 +558,22 @@ def main():
             
             st.plotly_chart(fig_portfolio, use_container_width=True)
             
-            # Show stats - Responsive
-            if st.session_state.get('mobile_view', False):
-                # Mobile: 2 columns
-                col_stat1, col_stat2 = st.columns(2)
-                with col_stat1:
-                    max_portfolio = df_portfolio['portfolio_value'].max()
-                    st.metric("Peak Portfolio", f"${max_portfolio:,.0f}")
-                    best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
-                    st.metric("Best Day", f"+${best_day['daily_pnl']:,.0f}", 
-                             delta=best_day['date'].strftime('%m/%d'))
-                with col_stat2:
-                    min_portfolio = df_portfolio['portfolio_value'].min()
-                    st.metric("Lowest Portfolio", f"${min_portfolio:,.0f}")
-                    worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
-                    st.metric("Worst Day", f"${worst_day['daily_pnl']:,.0f}",
-                             delta=worst_day['date'].strftime('%m/%d'))
-            else:
-                # Desktop: 4 columns
-                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                with col_stat1:
-                    max_portfolio = df_portfolio['portfolio_value'].max()
-                    st.metric("Peak Portfolio", f"${max_portfolio:,.2f}")
-                with col_stat2:
-                    min_portfolio = df_portfolio['portfolio_value'].min()
-                    st.metric("Lowest Portfolio", f"${min_portfolio:,.2f}")
-                with col_stat3:
-                    best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
-                    st.metric("Best Day", f"+${best_day['daily_pnl']:,.2f}", 
-                             delta=best_day['date'].strftime('%Y-%m-%d'))
-                with col_stat4:
-                    worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
-                    st.metric("Worst Day", f"${worst_day['daily_pnl']:,.2f}",
-                             delta=worst_day['date'].strftime('%Y-%m-%d'))
+            # Show stats
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            with col_stat1:
+                max_portfolio = df_portfolio['portfolio_value'].max()
+                st.metric("Peak Portfolio", f"${max_portfolio:,.2f}")
+            with col_stat2:
+                min_portfolio = df_portfolio['portfolio_value'].min()
+                st.metric("Lowest Portfolio", f"${min_portfolio:,.2f}")
+            with col_stat3:
+                best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
+                st.metric("Best Day", f"+${best_day['daily_pnl']:,.2f}", 
+                         delta=best_day['date'].strftime('%Y-%m-%d'))
+            with col_stat4:
+                worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
+                st.metric("Worst Day", f"${worst_day['daily_pnl']:,.2f}",
+                         delta=worst_day['date'].strftime('%Y-%m-%d'))
         else:
             st.info("📊 Belum ada data trading untuk menampilkan history portfolio")
         
@@ -690,43 +582,24 @@ def main():
         # NOW SHOW MAIN TITLE
         st.title("📈 Profit and Loss Analysis")
         
-        # Top metrics - Responsive layout
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns per row
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Initial Balance", f"${initial_balance:,.0f}")
-                st.metric("Total Loss", f"${stats['total_loss']:.0f}",
-                         delta=None, delta_color="off")
-                st.metric("Unrealized P&L", f"${total_unrealized_pnl:.0f}",
-                         delta=None,
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with col2:
-                st.metric("Total Profit", f"${stats['total_profit']:.0f}", 
-                         delta=None, delta_color="off")
-                st.metric("Realized P&L", f"${realized_pnl:.0f}",
-                         delta=None, 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-                st.metric("Trading Volume", f"${stats['trading_volume']:,.0f}")
-        else:
-            # Desktop: 5 columns
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
-                st.metric("Initial Balance", f"{initial_balance:,.2f} USD")
-            with col2:
-                st.metric("Total Profit", f"{stats['total_profit']:.2f} USD", 
-                         delta=None, delta_color="off")
-            with col3:
-                st.metric("Total Loss", f"{stats['total_loss']:.2f} USD",
-                         delta=None, delta_color="off")
-            with col4:
-                st.metric("Realized P&L", f"{realized_pnl:.2f} USD",
-                         delta=None, 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-            with col5:
-                st.metric("Unrealized P&L", f"{total_unrealized_pnl:.2f} USD",
-                         delta=None,
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
+        # Top metrics - Row 1
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Initial Balance", f"{initial_balance:,.2f} USD")
+        with col2:
+            st.metric("Total Profit", f"{stats['total_profit']:.2f} USD", 
+                     delta=None, delta_color="off")
+        with col3:
+            st.metric("Total Loss", f"{stats['total_loss']:.2f} USD",
+                     delta=None, delta_color="off")
+        with col4:
+            st.metric("Realized P&L", f"{realized_pnl:.2f} USD",
+                     delta=None, 
+                     delta_color="normal" if realized_pnl >= 0 else "inverse")
+        with col5:
+            st.metric("Unrealized P&L", f"{total_unrealized_pnl:.2f} USD",
+                     delta=None,
+                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
         
         st.divider()
         
@@ -767,48 +640,27 @@ def main():
         
         st.divider()
         
-        # Second row metrics - Responsive
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns
-            col5, col6 = st.columns(2)
-            with col5:
-                st.metric("Losing Days", f"{stats['losing_days']} Days")
-                st.metric("Average Profit", f"${stats['avg_profit']:.0f}")
-            with col6:
-                st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
-                st.metric("Average Loss", f"${stats['avg_loss']:.0f}")
-        else:
-            # Desktop: 5 columns
-            col5, col6, col7, col8, col9 = st.columns(5)
-            with col5:
-                st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}")
-            with col6:
-                st.metric("Losing Days", f"{stats['losing_days']} Days")
-            with col7:
-                st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
-            with col8:
-                st.metric("Average Profit", f"{stats['avg_profit']:.2f} USD")
-            with col9:
-                st.metric("Average Loss", f"{stats['avg_loss']:.2f} USD")
+        # Second row metrics
+        col5, col6, col7, col8, col9 = st.columns(5)
+        with col5:
+            st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}")
+        with col6:
+            st.metric("Worst Trade", f"{stats['losing_days']} Days")
+        with col7:
+            st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
+        with col8:
+            st.metric("Average Profit", f"{stats['avg_profit']:.2f} USD")
+        with col9:
+            st.metric("Average Loss", f"{stats['avg_loss']:.2f} USD")
         
-        # Third row metrics - Responsive
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns
-            col9, col10 = st.columns(2)
-            with col9:
-                st.metric("Win Rate", f"{stats['win_rate']:.1f} %")
-                st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
-            with col10:
-                st.metric("Winning Days", f"{stats['winning_days']} Days")
-        else:
-            # Desktop: 3 columns
-            col9, col10, col11 = st.columns(3)
-            with col9:
-                st.metric("Win Rate", f"{stats['win_rate']:.2f} %")
-            with col10:
-                st.metric("Winning Days", f"{stats['winning_days']} Days")
-            with col11:
-                st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
+        # Third row metrics
+        col9, col10, col11 = st.columns(3)
+        with col9:
+            st.metric("PNL Rate", f"{stats['win_rate']:.2f} %")
+        with col10:
+            st.metric("Best Trade", f"{stats['winning_days']} Days")
+        with col11:
+            st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
         
         st.divider()
         
@@ -958,7 +810,7 @@ def main():
                         st.metric("Average Daily P&L", f"${avg_futures:,.2f}")
                     with col_f3:
                         win_rate_futures = (df_futures_chart['pnl'] > 0).sum() / len(df_futures_chart) * 100
-                        st.metric("Win Rate", f"{win_rate_futures:.1f}%")
+                        st.metric("PNL Rate", f"{win_rate_futures:.1f}%")
                 else:
                     st.info("Belum ada data futures untuk ditampilkan")
             
@@ -1022,7 +874,7 @@ def main():
                         st.metric("Average Daily P&L", f"${avg_spot:,.2f}")
                     with col_s3:
                         win_rate_spot = (df_spot_daily['pnl'] > 0).sum() / len(df_spot_daily) * 100
-                        st.metric("Win Rate", f"{win_rate_spot:.1f}%")
+                        st.metric("PNL Rate", f"{win_rate_spot:.1f}%")
                 else:
                     st.info("Belum ada data spot untuk ditampilkan")
             
@@ -1384,87 +1236,32 @@ def main():
                             
                             st.divider()
                             
-                            # Action tabs: Update Price, Edit Position, Close Position
-                            action_tab1, action_tab2, action_tab3 = st.tabs(["🔄 Update Price", "✏️ Edit Position", "✅ Close Position"])
-                            
-                            with action_tab1:
-                                st.markdown("**Update Current Market Price**")
+                            # Update price
+                            col_action1, col_action2 = st.columns(2)
+                            with col_action1:
                                 new_price = st.number_input(
-                                    "Current Price (USD)",
+                                    "Update Current Price",
                                     min_value=0.0,
                                     value=float(holding['current_price']),
                                     step=0.01,
                                     key=f"price_{holding['id']}"
                                 )
-                                if st.button("🔄 Update Price", key=f"update_{holding['id']}", use_container_width=True):
+                                if st.button("🔄 Update Price", key=f"update_{holding['id']}"):
                                     holding['current_price'] = new_price
                                     holding['unrealized_pnl'] = (holding['quantity'] * new_price) - (holding['quantity'] * holding['entry_price'])
                                     save_holdings_data(holdings_data)
-                                    st.success("✅ Price updated!")
+                                    st.success("Price updated!")
                                     st.rerun()
                             
-                            with action_tab2:
-                                st.markdown("**Edit Position Details**")
-                                with st.form(f"edit_form_{holding['id']}"):
-                                    edit_symbol = st.text_input("Symbol/Pair", value=holding['symbol'], key=f"edit_symbol_{holding['id']}")
-                                    edit_quantity = st.number_input("Quantity", min_value=0.0, value=float(holding['quantity']), step=0.01, key=f"edit_qty_{holding['id']}")
-                                    edit_entry_price = st.number_input("Entry Price (USD)", min_value=0.0, value=float(holding['entry_price']), step=0.01, key=f"edit_entry_{holding['id']}")
-                                    
-                                    # Convert entry_date string to datetime for date_input
-                                    from datetime import datetime
-                                    entry_date_obj = datetime.strptime(holding['entry_date'], '%Y-%m-%d').date()
-                                    edit_entry_date = st.date_input("Entry Date", value=entry_date_obj, key=f"edit_date_{holding['id']}")
-                                    
-                                    edit_current_price = st.number_input("Current Price (USD)", min_value=0.0, value=float(holding['current_price']), step=0.01, key=f"edit_current_{holding['id']}")
-                                    edit_notes = st.text_area("Notes", value=holding.get('notes', ''), key=f"edit_notes_{holding['id']}")
-                                    
-                                    col_preview1, col_preview2 = st.columns(2)
-                                    with col_preview1:
-                                        new_cost = edit_quantity * edit_entry_price
-                                        st.metric("New Cost Basis", f"${new_cost:,.2f}")
-                                    with col_preview2:
-                                        new_unrealized = (edit_quantity * edit_current_price) - (edit_quantity * edit_entry_price)
-                                        st.metric("New Unrealized P&L", f"${new_unrealized:,.2f}")
-                                    
-                                    submitted_edit = st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
-                                    
-                                    if submitted_edit:
-                                        # Update holding data
-                                        holding['symbol'] = edit_symbol
-                                        holding['quantity'] = edit_quantity
-                                        holding['entry_price'] = edit_entry_price
-                                        holding['entry_date'] = edit_entry_date.strftime('%Y-%m-%d')
-                                        holding['current_price'] = edit_current_price
-                                        holding['notes'] = edit_notes
-                                        holding['unrealized_pnl'] = new_unrealized
-                                        
-                                        save_holdings_data(holdings_data)
-                                        st.success("✅ Position updated successfully!")
-                                        st.balloons()
-                                        st.rerun()
-                            
-                            with action_tab3:
-                                st.markdown("**Close This Position**")
-                                st.warning("⚠️ This will move the position to closed trades and record the realized P&L")
-                                
+                            with col_action2:
                                 close_price = st.number_input(
-                                    "Close Position at Price (USD)",
+                                    "Close Position Price",
                                     min_value=0.0,
                                     value=float(holding['current_price']),
                                     step=0.01,
                                     key=f"close_price_{holding['id']}"
                                 )
-                                
-                                # Preview close results
-                                preview_realized_pnl = (holding['quantity'] * close_price) - (holding['quantity'] * holding['entry_price'])
-                                col_close1, col_close2 = st.columns(2)
-                                with col_close1:
-                                    st.metric("Close Value", f"${holding['quantity'] * close_price:,.2f}")
-                                with col_close2:
-                                    st.metric("Realized P&L", f"${preview_realized_pnl:,.2f}",
-                                             delta_color="normal" if preview_realized_pnl >= 0 else "inverse")
-                                
-                                if st.button("✅ Confirm Close Position", key=f"close_{holding['id']}", type="primary", use_container_width=True):
+                                if st.button("✅ Close Position", key=f"close_{holding['id']}", type="primary"):
                                     # Calculate realized P&L
                                     realized_pnl = (holding['quantity'] * close_price) - (holding['quantity'] * holding['entry_price'])
                                     
