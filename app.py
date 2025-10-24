@@ -656,7 +656,7 @@ def main():
         # Third row metrics
         col9, col10, col11 = st.columns(3)
         with col9:
-            st.metric("Win Rate", f"{stats['win_rate']:.2f} %")
+            st.metric("PNL", f"{stats['win_rate']:.2f} %")
         with col10:
             st.metric("Winning Days", f"{stats['winning_days']} Days")
         with col11:
@@ -810,7 +810,7 @@ def main():
                         st.metric("Average Daily P&L", f"${avg_futures:,.2f}")
                     with col_f3:
                         win_rate_futures = (df_futures_chart['pnl'] > 0).sum() / len(df_futures_chart) * 100
-                        st.metric("Win Rate", f"{win_rate_futures:.1f}%")
+                        st.metric("PNL", f"{win_rate_futures:.1f}%")
                 else:
                     st.info("Belum ada data futures untuk ditampilkan")
             
@@ -874,7 +874,7 @@ def main():
                         st.metric("Average Daily P&L", f"${avg_spot:,.2f}")
                     with col_s3:
                         win_rate_spot = (df_spot_daily['pnl'] > 0).sum() / len(df_spot_daily) * 100
-                        st.metric("Win Rate", f"{win_rate_spot:.1f}%")
+                        st.metric("PNL", f"{win_rate_spot:.1f}%")
                 else:
                     st.info("Belum ada data spot untuk ditampilkan")
             
