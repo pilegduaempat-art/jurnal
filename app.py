@@ -361,7 +361,24 @@ def main():
     
     if page == "Dashboard":
         st.title("📈 Profit and Loss Analysis")
+
+                # Show portfolio calculation preview
+        st.markdown("### 📈 Portfolio Value Preview")
+        stats = calculate_statistics(data, futures_data)
         
+        preview_col1, preview_col2, preview_col3 = st.columns(3)
+        with preview_col1:
+            st.metric("Initial Balance", f"${new_balance:,.2f}")
+        with preview_col2:
+            st.metric("Net P&L", f"${stats['net_pnl']:,.2f}", 
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+        with preview_col3:
+            portfolio_value = new_balance + stats['net_pnl']
+            change_pct = ((stats['net_pnl'] / new_balance) * 100) if new_balance > 0 else 0
+            st.metric("Portfolio Value", f"${portfolio_value:,.2f}", 
+                     delta=f"{change_pct:+.2f}%",
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+            
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
         
