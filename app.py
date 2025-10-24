@@ -55,7 +55,9 @@ st.markdown("""
 
 # File untuk menyimpan data
 DATA_FILE = "trading_data.json"
-PASSWORD = "000000"
+FUTURES_FILE = "futures_data.json"
+ADMIN_PASSWORD = "000000"
+GUEST_PASSWORD = "123456"
 
 # Fungsi untuk load data
 def load_data():
@@ -64,30 +66,65 @@ def load_data():
             return json.load(f)
     return []
 
+def load_futures_data():
+    if os.path.exists(FUTURES_FILE):
+        with open(FUTURES_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
 # Fungsi untuk save data
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def save_futures_data(data):
+    with open(FUTURES_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
 # Fungsi autentikasi
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+        st.session_state.user_role = None
     
     if not st.session_state.authenticated:
-        st.title("🔐 Admin Login")
-        password = st.text_input("Enter Password", type="password")
-        if st.button("Login"):
-            if password == PASSWORD:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("❌ Password salah!")
+        st.title("🔐 Login")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("### Welcome to Trading Journal")
+            st.info("👤 **Admin**: Full access (entry & view)\n\n👁️ **Guest**: View only")
+            
+            password = st.text_input("Enter Password", type="password", placeholder="000000 or 123456")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🔑 Login as Admin", use_container_width=True):
+                    if password == ADMIN_PASSWORD:
+                        st.session_state.authenticated = True
+                        st.session_state.user_role = "admin"
+                        st.success("✅ Admin login successful!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid admin password!")
+            
+            with col_btn2:
+                if st.button("👁️ Login as Guest", use_container_width=True):
+                    if password == GUEST_PASSWORD:
+                        st.session_state.authenticated = True
+                        st.session_state.user_role = "guest"
+                        st.success("✅ Guest login successful!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid guest password!")
         st.stop()
 
 # Fungsi untuk menghitung statistik
-def calculate_statistics(data):
-    if not data:
+def calculate_statistics(data, futures_data):
+    # Gabungkan data spot dan futures
+    all_data = data.copy()
+    
+    if not all_data and not futures_data:
         return {
             "total_profit": 0,
             "total_loss": 0,
@@ -102,8 +139,34 @@ def calculate_statistics(data):
             "profit_loss_ratio": 0
         }
     
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])
+    # Tambahkan futures data ke dalam perhitungan
+    df_list = []
+    if all_data:
+        df_spot = pd.DataFrame(all_data)
+        df_spot['date'] = pd.to_datetime(df_spot['date'])
+        df_list.append(df_spot)
+    
+    if futures_data:
+        df_futures = pd.DataFrame(futures_data)
+        df_futures['date'] = pd.to_datetime(df_futures['date'])
+        df_list.append(df_futures)
+    
+    df = pd.concat(df_list, ignore_index=True) if df_list else pd.DataFrame()
+    
+    if len(df) == 0:
+        return {
+            "total_profit": 0,
+            "total_loss": 0,
+            "net_pnl": 0,
+            "trading_volume": 0,
+            "win_rate": 0,
+            "winning_days": 0,
+            "losing_days": 0,
+            "breakeven_days": 0,
+            "avg_profit": 0,
+            "avg_loss": 0,
+            "profit_loss_ratio": 0
+        }
     
     # Hitung daily PNL
     daily_pnl = df.groupby('date')['pnl'].sum().reset_index()
@@ -141,12 +204,24 @@ def calculate_statistics(data):
     }
 
 # Fungsi untuk membuat calendar view
-def create_calendar_view(data, year, month):
-    df = pd.DataFrame(data)
-    if len(df) == 0:
+def create_calendar_view(data, futures_data, year, month):
+    # Gabungkan data spot dan futures
+    all_entries = []
+    
+    if data:
+        df_spot = pd.DataFrame(data)
+        df_spot['date'] = pd.to_datetime(df_spot['date'])
+        all_entries.append(df_spot)
+    
+    if futures_data:
+        df_futures = pd.DataFrame(futures_data)
+        df_futures['date'] = pd.to_datetime(df_futures['date'])
+        all_entries.append(df_futures)
+    
+    if not all_entries:
         return None
     
-    df['date'] = pd.to_datetime(df['date'])
+    df = pd.concat(all_entries, ignore_index=True)
     daily_pnl = df.groupby('date')['pnl'].sum().reset_index()
     
     # Filter by year and month
@@ -237,20 +312,31 @@ def main():
     
     # Load data
     data = load_data()
+    futures_data = load_futures_data()
     
     # Sidebar untuk navigasi
     st.sidebar.title("📊 Trading Journal")
-    page = st.sidebar.radio("Navigation", ["Dashboard", "Entry Report", "Data Management"])
+    
+    # Show user role
+    if st.session_state.user_role == "admin":
+        st.sidebar.success("👤 Logged in as: **Admin**")
+        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Data Management"]
+    else:
+        st.sidebar.info("👁️ Logged in as: **Guest** (View Only)")
+        page_options = ["Dashboard"]
+    
+    page = st.sidebar.radio("Navigation", page_options)
     
     if st.sidebar.button("🚪 Logout"):
         st.session_state.authenticated = False
+        st.session_state.user_role = None
         st.rerun()
     
     if page == "Dashboard":
         st.title("📈 Profit and Loss Analysis")
         
         # Calculate statistics
-        stats = calculate_statistics(data)
+        stats = calculate_statistics(data, futures_data)
         
         # Top metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -310,31 +396,98 @@ def main():
                                              format_func=lambda x: calendar.month_name[x],
                                              key="month_select")
             
-            # Create and display calendar
-            if data:
-                fig = create_calendar_view(data, selected_year, selected_month)
+            # Tabel Futures (di atas)
+            st.markdown("### 📊 Daily PNL (Futures)")
+            if futures_data:
+                df_futures = pd.DataFrame(futures_data)
+                df_futures['date'] = pd.to_datetime(df_futures['date'])
+                
+                # Filter by selected month and year
+                df_futures_filtered = df_futures[
+                    (df_futures['date'].dt.year == selected_year) & 
+                    (df_futures['date'].dt.month == selected_month)
+                ].copy()
+                
+                if len(df_futures_filtered) > 0:
+                    # Format display
+                    df_futures_display = df_futures_filtered.copy()
+                    df_futures_display['date'] = df_futures_display['date'].dt.strftime('%Y-%m-%d')
+                    df_futures_display['pnl'] = df_futures_display['pnl'].apply(lambda x: f"+{x:.2f}" if x > 0 else f"{x:.2f}")
+                    
+                    # Reorder columns
+                    display_cols = ['date', 'pnl', 'notes']
+                    df_futures_display = df_futures_display[display_cols]
+                    df_futures_display.columns = ['Trading Date', 'P&L (USD)', 'Notes']
+                    
+                    st.dataframe(df_futures_display, use_container_width=True, hide_index=True)
+                    
+                    # Summary
+                    total_futures_pnl = df_futures_filtered['pnl'].sum()
+                    st.metric("Total Futures P&L", f"{total_futures_pnl:.2f} USD", 
+                             delta=None, 
+                             delta_color="normal" if total_futures_pnl >= 0 else "inverse")
+                else:
+                    st.info("Tidak ada data futures untuk bulan ini")
+            else:
+                st.info("Belum ada data futures. Silakan tambahkan entry di 'Entry Report - Futures'")
+            
+            st.divider()
+            
+            # Calendar View (gabungan spot + futures)
+            st.markdown("### 📅 Calendar View (All Trades)")
+            if data or futures_data:
+                fig = create_calendar_view(data, futures_data, selected_year, selected_month)
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("Tidak ada data untuk bulan ini")
             else:
-                st.info("Belum ada data trading. Silakan tambahkan entry di halaman 'Entry Report'")
+                st.info("Belum ada data trading.")
         
         with tab2:
             st.subheader("📋 Trading History")
+            
+            # Futures History
+            st.markdown("#### Futures Trading")
+            if futures_data:
+                df_futures = pd.DataFrame(futures_data)
+                df_futures['date'] = pd.to_datetime(df_futures['date']).dt.strftime('%Y-%m-%d')
+                st.dataframe(df_futures, use_container_width=True, hide_index=True)
+            else:
+                st.info("Belum ada data futures")
+            
+            st.divider()
+            
+            # Spot History
+            st.markdown("#### Spot Trading")
             if data:
                 df = pd.DataFrame(data)
                 df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
                 st.dataframe(df, use_container_width=True, hide_index=True)
             else:
-                st.info("Belum ada data")
+                st.info("Belum ada data spot")
         
         with tab3:
             st.subheader("📊 Symbol Analysis")
+            
+            # Combine data
+            all_data = []
             if data:
-                df = pd.DataFrame(data)
-                if 'symbol' in df.columns:
-                    symbol_stats = df.groupby('symbol').agg({
+                df_spot = pd.DataFrame(data)
+                df_spot['type'] = 'Spot'
+                all_data.append(df_spot)
+            if futures_data:
+                df_futures = pd.DataFrame(futures_data)
+                if 'symbol' not in df_futures.columns:
+                    df_futures['symbol'] = 'Futures'
+                df_futures['type'] = 'Futures'
+                all_data.append(df_futures)
+            
+            if all_data:
+                df_combined = pd.concat(all_data, ignore_index=True)
+                
+                if 'symbol' in df_combined.columns:
+                    symbol_stats = df_combined.groupby('symbol').agg({
                         'pnl': ['sum', 'mean', 'count']
                     }).round(2)
                     symbol_stats.columns = ['Total PNL', 'Avg PNL', 'Trades']
@@ -356,15 +509,27 @@ def main():
         
         with tab4:
             st.subheader("💰 Funding & Transaction Summary")
+            
+            # Combine data
+            all_data = []
             if data:
-                df = pd.DataFrame(data)
-                if 'volume' in df.columns:
-                    total_volume = df['volume'].sum()
+                df_spot = pd.DataFrame(data)
+                all_data.append(df_spot)
+            if futures_data:
+                df_futures = pd.DataFrame(futures_data)
+                if 'volume' in df_futures.columns:
+                    all_data.append(df_futures)
+            
+            if all_data:
+                df_combined = pd.concat(all_data, ignore_index=True)
+                
+                if 'volume' in df_combined.columns:
+                    total_volume = df_combined['volume'].sum()
                     st.metric("Total Trading Volume", f"{total_volume:,.2f} USD")
                     
                     # Volume over time
-                    df['date'] = pd.to_datetime(df['date'])
-                    daily_volume = df.groupby('date')['volume'].sum().reset_index()
+                    df_combined['date'] = pd.to_datetime(df_combined['date'])
+                    daily_volume = df_combined.groupby('date')['volume'].sum().reset_index()
                     
                     fig = px.line(daily_volume, x='date', y='volume',
                                  title="Daily Trading Volume")
@@ -377,8 +542,13 @@ def main():
             else:
                 st.info("Belum ada data")
     
-    elif page == "Entry Report":
-        st.title("📝 Daily Trading Report Entry")
+    elif page == "Entry Report - Spot":
+        # Check if user is admin
+        if st.session_state.user_role != "admin":
+            st.error("🚫 Access Denied. Admin only.")
+            st.stop()
+        
+        st.title("📝 Daily Trading Report Entry (Spot)")
         
         with st.form("entry_form"):
             col1, col2 = st.columns(2)
@@ -415,39 +585,101 @@ def main():
                 st.success("✅ Entry berhasil disimpan!")
                 st.rerun()
     
+    elif page == "Entry Report - Futures":
+        # Check if user is admin
+        if st.session_state.user_role != "admin":
+            st.error("🚫 Access Denied. Admin only.")
+            st.stop()
+        
+        st.title("📝 Daily Trading Report Entry (Futures)")
+        
+        with st.form("futures_entry_form"):
+            trade_date = st.date_input("Trading Date", datetime.now())
+            pnl = st.number_input("P&L (USD)", step=0.01)
+            notes = st.text_area("Notes", placeholder="Trading notes for futures...")
+            
+            submitted = st.form_submit_button("💾 Save Futures Entry", use_container_width=True)
+            
+            if submitted:
+                new_entry = {
+                    "date": trade_date.strftime("%Y-%m-%d"),
+                    "pnl": pnl,
+                    "notes": notes,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                futures_data.append(new_entry)
+                save_futures_data(futures_data)
+                st.success("✅ Futures entry berhasil disimpan!")
+                st.rerun()
+    
     else:  # Data Management
+        # Check if user is admin
+        if st.session_state.user_role != "admin":
+            st.error("🚫 Access Denied. Admin only.")
+            st.stop()
+        
         st.title("🗂️ Data Management")
         
-        if data:
-            st.subheader("All Entries")
-            df = pd.DataFrame(data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            st.divider()
+        # Futures Data Management
+        st.subheader("Futures Data")
+        if futures_data:
+            df_futures = pd.DataFrame(futures_data)
+            st.dataframe(df_futures, use_container_width=True, hide_index=True)
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🗑️ Clear All Data", type="secondary"):
-                    if st.session_state.get('confirm_delete', False):
-                        save_data([])
-                        st.session_state.confirm_delete = False
-                        st.success("Data berhasil dihapus!")
+                if st.button("🗑️ Clear Futures Data", type="secondary", key="clear_futures"):
+                    if st.session_state.get('confirm_delete_futures', False):
+                        save_futures_data([])
+                        st.session_state.confirm_delete_futures = False
+                        st.success("Futures data berhasil dihapus!")
                         st.rerun()
                     else:
-                        st.session_state.confirm_delete = True
+                        st.session_state.confirm_delete_futures = True
                         st.warning("Klik sekali lagi untuk konfirmasi")
             
             with col2:
-                # Export to CSV
-                csv = df.to_csv(index=False)
+                csv_futures = df_futures.to_csv(index=False)
                 st.download_button(
-                    label="📥 Download CSV",
-                    data=csv,
-                    file_name=f"trading_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                    label="📥 Download Futures CSV",
+                    data=csv_futures,
+                    file_name=f"futures_data_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
                 )
         else:
-            st.info("Belum ada data")
+            st.info("Belum ada data futures")
+        
+        st.divider()
+        
+        # Spot Data Management
+        st.subheader("Spot Data")
+        if data:
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Clear Spot Data", type="secondary", key="clear_spot"):
+                    if st.session_state.get('confirm_delete_spot', False):
+                        save_data([])
+                        st.session_state.confirm_delete_spot = False
+                        st.success("Spot data berhasil dihapus!")
+                        st.rerun()
+                    else:
+                        st.session_state.confirm_delete_spot = True
+                        st.warning("Klik sekali lagi untuk konfirmasi")
+            
+            with col2:
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Spot CSV",
+                    data=csv,
+                    file_name=f"spot_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("Belum ada data spot")
 
 if __name__ == "__main__":
     main()
