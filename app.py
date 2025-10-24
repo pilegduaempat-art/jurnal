@@ -103,7 +103,7 @@ def check_password():
             st.markdown("### Welcome to Trading Journal")
             st.info("👤 **Admin**: Full access (entry & view)\n\n👁️ **Guest**: View only")
             
-            password = st.text_input("Enter Password", type="password", placeholder="000000 or 123456")
+            password = st.text_input("Enter Password", type="password", placeholder="")
             
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
