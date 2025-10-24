@@ -57,6 +57,16 @@ st.markdown("""
         margin: 20px 0;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
+    .portfolio-preview-card div[data-testid="stMetricValue"] {
+        font-size: 32px !important;
+        font-weight: 700 !important;
+        color: #ffffff !important;
+    }
+    .portfolio-preview-card div[data-testid="stMetricLabel"] {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #f0f0f0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
