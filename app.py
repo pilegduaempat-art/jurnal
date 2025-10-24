@@ -349,7 +349,7 @@ def main():
         st.rerun()
     
     if page == "Dashboard":
-        st.title("📈 Portofolio - Overview PNL")
+        st.title("📈 Portfolio - Overview PNL")
         
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
