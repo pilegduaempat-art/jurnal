@@ -56,6 +56,7 @@ st.markdown("""
 # File untuk menyimpan data
 DATA_FILE = "trading_data.json"
 FUTURES_FILE = "futures_data.json"
+BALANCE_FILE = "balance_data.json"
 
 # Load passwords from Streamlit secrets (production) or fallback (development)
 try:
@@ -80,6 +81,13 @@ def load_futures_data():
             return json.load(f)
     return []
 
+def load_balance_data():
+    if os.path.exists(BALANCE_FILE):
+        with open(BALANCE_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get('initial_balance', 0)
+    return 0
+
 # Fungsi untuk save data
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
@@ -88,6 +96,10 @@ def save_data(data):
 def save_futures_data(data):
     with open(FUTURES_FILE, 'w') as f:
         json.dump(data, f, indent=2)
+
+def save_balance_data(balance):
+    with open(BALANCE_FILE, 'w') as f:
+        json.dump({'initial_balance': balance}, f, indent=2)
 
 # Fungsi autentikasi
 def check_password():
@@ -315,6 +327,7 @@ def main():
     # Load data
     data = load_data()
     futures_data = load_futures_data()
+    initial_balance = load_balance_data()
     
     # Sidebar untuk navigasi
     st.sidebar.title("📊 Trading Journal")
@@ -322,7 +335,7 @@ def main():
     # Show user role
     if st.session_state.user_role == "admin":
         st.sidebar.success("👤 Logged in as: **Admin**")
-        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Data Management"]
+        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Entry Balance", "Data Management"]
     else:
         st.sidebar.info("👁️ Logged in as: **Guest** (View Only)")
         page_options = ["Dashboard"]
@@ -340,32 +353,42 @@ def main():
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
         
-        # Top metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Calculate portfolio value
+        current_portfolio = initial_balance + stats['net_pnl']
+        portfolio_change_pct = ((stats['net_pnl'] / initial_balance) * 100) if initial_balance > 0 else 0
+        
+        # Top metrics - Row 1
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
+            st.metric("Initial Balance", f"{initial_balance:,.2f} USD")
+        with col2:
             st.metric("Total Profit", f"{stats['total_profit']:.2f} USD", 
                      delta=None, delta_color="off")
-        with col2:
+        with col3:
             st.metric("Total Loss", f"{stats['total_loss']:.2f} USD",
                      delta=None, delta_color="off")
-        with col3:
-            st.metric("Net Profit/Loss", f"{stats['net_pnl']:.2f} USD",
-                     delta=None, delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
         with col4:
-            st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}",
-                     delta=None, delta_color="off")
+            st.metric("Net Profit/Loss", f"{stats['net_pnl']:.2f} USD",
+                     delta=f"{portfolio_change_pct:+.2f}%", 
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+        with col5:
+            st.metric("Current Portfolio", f"{current_portfolio:,.2f} USD",
+                     delta=f"{stats['net_pnl']:+,.2f}",
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
         
         st.divider()
         
         # Second row metrics
-        col5, col6, col7, col8 = st.columns(4)
+        col5, col6, col7, col8, col9 = st.columns(5)
         with col5:
-            st.metric("Losing Days", f"{stats['losing_days']} Days")
+            st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}")
         with col6:
-            st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
+            st.metric("Losing Days", f"{stats['losing_days']} Days")
         with col7:
-            st.metric("Average Profit", f"{stats['avg_profit']:.2f} USD")
+            st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
         with col8:
+            st.metric("Average Profit", f"{stats['avg_profit']:.2f} USD")
+        with col9:
             st.metric("Average Loss", f"{stats['avg_loss']:.2f} USD")
         
         # Third row metrics
@@ -628,6 +651,67 @@ def main():
                 st.success("✅ Futures entry berhasil disimpan!")
                 st.rerun()
     
+    elif page == "Entry Balance":
+        # Check if user is admin
+        if st.session_state.user_role != "admin":
+            st.error("🚫 Access Denied. Admin only.")
+            st.stop()
+        
+        st.title("💰 Entry Initial Balance")
+        
+        # Show current balance
+        current_balance = load_balance_data()
+        
+        if current_balance > 0:
+            st.info(f"📊 Current Initial Balance: **${current_balance:,.2f} USD**")
+        else:
+            st.warning("⚠️ No initial balance set. Please enter your starting capital.")
+        
+        st.divider()
+        
+        with st.form("balance_form"):
+            st.markdown("### Set Initial Balance")
+            st.caption("This is your starting capital before any trading activity.")
+            
+            new_balance = st.number_input(
+                "Initial Balance (USD)", 
+                min_value=0.0, 
+                value=float(current_balance),
+                step=100.0,
+                help="Enter your starting capital amount"
+            )
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.info("💡 **Tip**: Set this to your account balance before you started trading. Portfolio value will be calculated as: Initial Balance + Net P&L")
+            
+            submitted = st.form_submit_button("💾 Save Balance", use_container_width=True, type="primary")
+            
+            if submitted:
+                save_balance_data(new_balance)
+                st.success(f"✅ Initial balance updated to ${new_balance:,.2f} USD")
+                st.balloons()
+                st.rerun()
+        
+        st.divider()
+        
+        # Show portfolio calculation preview
+        st.markdown("### 📈 Portfolio Value Preview")
+        stats = calculate_statistics(data, futures_data)
+        
+        preview_col1, preview_col2, preview_col3 = st.columns(3)
+        with preview_col1:
+            st.metric("Initial Balance", f"${new_balance:,.2f}")
+        with preview_col2:
+            st.metric("Net P&L", f"${stats['net_pnl']:,.2f}", 
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+        with preview_col3:
+            portfolio_value = new_balance + stats['net_pnl']
+            change_pct = ((stats['net_pnl'] / new_balance) * 100) if new_balance > 0 else 0
+            st.metric("Portfolio Value", f"${portfolio_value:,.2f}", 
+                     delta=f"{change_pct:+.2f}%",
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
+    
     else:  # Data Management
         # Check if user is admin
         if st.session_state.user_role != "admin":
@@ -635,6 +719,25 @@ def main():
             st.stop()
         
         st.title("🗂️ Data Management")
+        
+        # Balance Data
+        st.subheader("💰 Balance Data")
+        initial_balance = load_balance_data()
+        if initial_balance > 0:
+            st.info(f"Current Initial Balance: **${initial_balance:,.2f} USD**")
+            if st.button("🗑️ Reset Balance", type="secondary", key="reset_balance"):
+                if st.session_state.get('confirm_reset_balance', False):
+                    save_balance_data(0)
+                    st.session_state.confirm_reset_balance = False
+                    st.success("Balance berhasil direset!")
+                    st.rerun()
+                else:
+                    st.session_state.confirm_reset_balance = True
+                    st.warning("Klik sekali lagi untuk konfirmasi")
+        else:
+            st.info("Balance belum diset. Kunjungi halaman 'Entry Balance'")
+        
+        st.divider()
         
         # Futures Data Management
         st.subheader("Futures Data")
