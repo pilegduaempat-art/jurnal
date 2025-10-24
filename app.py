@@ -130,7 +130,7 @@ def check_password():
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown("### Welcome to Trading Journal")
+            st.markdown("### Welcome to Ruastatement")
             st.info("👤 **Admin**: Full access (entry & view)\n\n👁️ **Guest**: View only")
             
             password = st.text_input("Enter Password", type="password", placeholder="")
