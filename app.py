@@ -63,6 +63,11 @@ HOLDINGS_FILE = "holdings_data.json"
 try:
     ADMIN_PASSWORD = st.secrets["passwords"]["admin"]
     GUEST_PASSWORD = st.secrets["passwords"]["guest"]
+except:
+    # Fallback for local development
+    ADMIN_PASSWORD = "000000"
+    GUEST_PASSWORD = "123456"
+    st.warning("⚠️ Using default passwords. Please configure secrets for production!")
 
 # Fungsi untuk load data
 def load_data():
@@ -84,12 +89,6 @@ def load_balance_data():
             return data.get('initial_balance', 0)
     return 0
 
-def load_holdings_data():
-    if os.path.exists(HOLDINGS_FILE):
-        with open(HOLDINGS_FILE, 'r') as f:
-            return json.load(f)
-    return []
-
 # Fungsi untuk save data
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
@@ -102,10 +101,6 @@ def save_futures_data(data):
 def save_balance_data(balance):
     with open(BALANCE_FILE, 'w') as f:
         json.dump({'initial_balance': balance}, f, indent=2)
-
-def save_holdings_data(data):
-    with open(HOLDINGS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
 
 # Fungsi autentikasi
 def check_password():
@@ -334,15 +329,14 @@ def main():
     data = load_data()
     futures_data = load_futures_data()
     initial_balance = load_balance_data()
-    holdings_data = load_holdings_data()
     
     # Sidebar untuk navigasi
-    st.sidebar.title("📊 Trading Journal")
+    st.sidebar.title("📊 Portofolio - Overview PNL")
     
     # Show user role
     if st.session_state.user_role == "admin":
         st.sidebar.success("👤 Logged in as: **Admin**")
-        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Holdings (Floating)", "Entry Balance", "Data Management"]
+        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Entry Balance", "Data Management"]
     else:
         st.sidebar.info("👁️ Logged in as: **Guest** (View Only)")
         page_options = ["Dashboard"]
@@ -355,23 +349,14 @@ def main():
         st.rerun()
     
     if page == "Dashboard":
-        st.title("📈 Overview PNL")
+        st.title("📈 Profit and Loss Analysis")
         
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
         
-        # Calculate total unrealized P&L from holdings
-        total_unrealized_pnl = 0
-        if holdings_data:
-            for holding in holdings_data:
-                if holding.get('status') == 'open':
-                    total_unrealized_pnl += holding.get('unrealized_pnl', 0)
-        
         # Calculate portfolio value
-        realized_pnl = stats['net_pnl']
-        total_pnl = realized_pnl + total_unrealized_pnl
-        current_portfolio = initial_balance + total_pnl
-        portfolio_change_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
+        current_portfolio = initial_balance + stats['net_pnl']
+        portfolio_change_pct = ((stats['net_pnl'] / initial_balance) * 100) if initial_balance > 0 else 0
         
         # Top metrics - Row 1
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -384,48 +369,13 @@ def main():
             st.metric("Total Loss", f"{stats['total_loss']:.2f} USD",
                      delta=None, delta_color="off")
         with col4:
-            st.metric("Realized P&L", f"{realized_pnl:.2f} USD",
-                     delta=None, 
-                     delta_color="normal" if realized_pnl >= 0 else "inverse")
+            st.metric("Net Profit/Loss", f"{stats['net_pnl']:.2f} USD",
+                     delta=f"{portfolio_change_pct:+.2f}%", 
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
         with col5:
-            st.metric("Unrealized P&L", f"{total_unrealized_pnl:.2f} USD",
-                     delta=None,
-                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-        
-        st.divider()
-        
-        # Holdings Data Management
-        st.subheader("📊 Holdings Data")
-        if holdings_data:
-            open_pos = len([h for h in holdings_data if h.get('status') == 'open'])
-            closed_pos = len([h for h in holdings_data if h.get('status') == 'closed'])
-            st.info(f"Open Positions: **{open_pos}** | Closed Positions: **{closed_pos}**")
-            
-            df_holdings = pd.DataFrame(holdings_data)
-            st.dataframe(df_holdings, use_container_width=True, hide_index=True)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🗑️ Clear Holdings Data", type="secondary", key="clear_holdings"):
-                    if st.session_state.get('confirm_delete_holdings', False):
-                        save_holdings_data([])
-                        st.session_state.confirm_delete_holdings = False
-                        st.success("Holdings data berhasil dihapus!")
-                        st.rerun()
-                    else:
-                        st.session_state.confirm_delete_holdings = True
-                        st.warning("Klik sekali lagi untuk konfirmasi")
-            
-            with col2:
-                csv_holdings = df_holdings.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Holdings CSV",
-                    data=csv_holdings,
-                    file_name=f"holdings_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-        else:
-            st.info("Belum ada data holdings")
+            st.metric("Current Portfolio", f"{current_portfolio:,.2f} USD",
+                     delta=f"{stats['net_pnl']:+,.2f}",
+                     delta_color="normal" if stats['net_pnl'] >= 0 else "inverse")
         
         st.divider()
         
@@ -536,28 +486,6 @@ def main():
         with tab2:
             st.subheader("📋 Trading History")
             
-            # Holdings/Open Positions
-            st.markdown("#### 📊 Open Positions (Floating)")
-            if holdings_data:
-                open_holdings = [h for h in holdings_data if h.get('status') == 'open']
-                if open_holdings:
-                    df_holdings = pd.DataFrame(open_holdings)
-                    # Format display
-                    display_cols = ['symbol', 'quantity', 'entry_price', 'current_price', 'unrealized_pnl', 'entry_date']
-                    df_holdings_display = df_holdings[display_cols].copy()
-                    df_holdings_display.columns = ['Symbol', 'Quantity', 'Entry Price', 'Current Price', 'Unrealized P&L', 'Entry Date']
-                    st.dataframe(df_holdings_display, use_container_width=True, hide_index=True)
-                    
-                    # Summary
-                    total_value = df_holdings['quantity'].sum() * df_holdings['current_price'].mean()
-                    st.metric("Total Holdings Value", f"${total_value:,.2f} USD")
-                else:
-                    st.info("Tidak ada posisi terbuka")
-            else:
-                st.info("Belum ada data holdings")
-            
-            st.divider()
-            
             # Futures History
             st.markdown("#### Futures Trading")
             if futures_data:
@@ -569,8 +497,8 @@ def main():
             
             st.divider()
             
-            # Spot History (Closed Trades)
-            st.markdown("#### Spot Trading (Closed)")
+            # Spot History
+            st.markdown("#### Spot Trading")
             if data:
                 df = pd.DataFrame(data)
                 df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
@@ -723,194 +651,6 @@ def main():
                 save_futures_data(futures_data)
                 st.success("✅ Futures entry berhasil disimpan!")
                 st.rerun()
-    
-    elif page == "Holdings (Floating)":
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("📊 Holdings Management (Floating Positions)")
-        
-        # Tabs for Add and View
-        tab1, tab2 = st.tabs(["➕ Add New Position", "📋 Manage Positions"])
-        
-        with tab1:
-            st.markdown("### Add New Holding Position")
-            
-            with st.form("holdings_form"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    symbol = st.text_input("Symbol/Pair", placeholder="e.g., BTC, ETH, BNB")
-                    quantity = st.number_input("Quantity", min_value=0.0, step=0.01)
-                    entry_price = st.number_input("Entry Price (USD)", min_value=0.0, step=0.01)
-                    entry_date = st.date_input("Entry Date", datetime.now())
-                
-                with col2:
-                    current_price = st.number_input("Current Price (USD)", min_value=0.0, step=0.01)
-                    notes = st.text_area("Notes", placeholder="Optional notes about this position...")
-                
-                # Calculate unrealized P&L
-                if quantity > 0 and entry_price > 0 and current_price > 0:
-                    cost_basis = quantity * entry_price
-                    current_value = quantity * current_price
-                    unrealized_pnl = current_value - cost_basis
-                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    
-                    st.divider()
-                    st.markdown("#### 💹 Position Summary")
-                    col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
-                    with col_sum1:
-                        st.metric("Cost Basis", f"${cost_basis:,.2f}")
-                    with col_sum2:
-                        st.metric("Current Value", f"${current_value:,.2f}")
-                    with col_sum3:
-                        st.metric("Unrealized P&L", f"${unrealized_pnl:,.2f}",
-                                 delta=f"{pnl_percent:+.2f}%",
-                                 delta_color="normal" if unrealized_pnl >= 0 else "inverse")
-                    with col_sum4:
-                        st.metric("Break Even Price", f"${entry_price:.2f}")
-                else:
-                    unrealized_pnl = 0
-                
-                submitted = st.form_submit_button("💾 Add Position", use_container_width=True)
-                
-                if submitted and symbol and quantity > 0 and entry_price > 0:
-                    new_holding = {
-                        "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "entry_price": entry_price,
-                        "current_price": current_price,
-                        "entry_date": entry_date.strftime("%Y-%m-%d"),
-                        "unrealized_pnl": unrealized_pnl,
-                        "status": "open",
-                        "notes": notes,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    holdings_data.append(new_holding)
-                    save_holdings_data(holdings_data)
-                    st.success("✅ Position berhasil ditambahkan!")
-                    st.rerun()
-        
-        with tab2:
-            st.markdown("### Current Holdings")
-            
-            if holdings_data:
-                open_holdings = [h for h in holdings_data if h.get('status') == 'open']
-                
-                if open_holdings:
-                    # Summary cards
-                    total_cost = sum(h['quantity'] * h['entry_price'] for h in open_holdings)
-                    total_current = sum(h['quantity'] * h['current_price'] for h in open_holdings)
-                    total_unrealized = total_current - total_cost
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Cost Basis", f"${total_cost:,.2f}")
-                    with col2:
-                        st.metric("Total Current Value", f"${total_current:,.2f}")
-                    with col3:
-                        st.metric("Total Unrealized P&L", f"${total_unrealized:,.2f}",
-                                 delta_color="normal" if total_unrealized >= 0 else "inverse")
-                    
-                    st.divider()
-                    
-                    # Display each holding with update/close options
-                    for idx, holding in enumerate(open_holdings):
-                        with st.expander(f"📊 {holding['symbol']} - Qty: {holding['quantity']} | Entry: ${holding['entry_price']:.2f}", expanded=False):
-                            col_info1, col_info2, col_info3 = st.columns(3)
-                            
-                            with col_info1:
-                                st.write(f"**Entry Date:** {holding['entry_date']}")
-                                st.write(f"**Cost Basis:** ${holding['quantity'] * holding['entry_price']:,.2f}")
-                            
-                            with col_info2:
-                                st.write(f"**Current Price:** ${holding['current_price']:.2f}")
-                                st.write(f"**Current Value:** ${holding['quantity'] * holding['current_price']:,.2f}")
-                            
-                            with col_info3:
-                                pnl = holding.get('unrealized_pnl', 0)
-                                pnl_pct = ((holding['current_price'] - holding['entry_price']) / holding['entry_price'] * 100) if holding['entry_price'] > 0 else 0
-                                st.metric("Unrealized P&L", f"${pnl:.2f}", delta=f"{pnl_pct:+.2f}%")
-                            
-                            if holding.get('notes'):
-                                st.info(f"📝 **Notes:** {holding['notes']}")
-                            
-                            st.divider()
-                            
-                            # Update price
-                            col_action1, col_action2 = st.columns(2)
-                            with col_action1:
-                                new_price = st.number_input(
-                                    "Update Current Price",
-                                    min_value=0.0,
-                                    value=float(holding['current_price']),
-                                    step=0.01,
-                                    key=f"price_{holding['id']}"
-                                )
-                                if st.button("🔄 Update Price", key=f"update_{holding['id']}"):
-                                    holding['current_price'] = new_price
-                                    holding['unrealized_pnl'] = (holding['quantity'] * new_price) - (holding['quantity'] * holding['entry_price'])
-                                    save_holdings_data(holdings_data)
-                                    st.success("Price updated!")
-                                    st.rerun()
-                            
-                            with col_action2:
-                                close_price = st.number_input(
-                                    "Close Position Price",
-                                    min_value=0.0,
-                                    value=float(holding['current_price']),
-                                    step=0.01,
-                                    key=f"close_price_{holding['id']}"
-                                )
-                                if st.button("✅ Close Position", key=f"close_{holding['id']}", type="primary"):
-                                    # Calculate realized P&L
-                                    realized_pnl = (holding['quantity'] * close_price) - (holding['quantity'] * holding['entry_price'])
-                                    
-                                    # Add to closed trades
-                                    closed_trade = {
-                                        "date": datetime.now().strftime("%Y-%m-%d"),
-                                        "symbol": holding['symbol'],
-                                        "position": "Long",
-                                        "entry_price": holding['entry_price'],
-                                        "exit_price": close_price,
-                                        "volume": holding['quantity'] * close_price,
-                                        "pnl": realized_pnl,
-                                        "notes": f"Closed from holdings. {holding.get('notes', '')}",
-                                        "timestamp": datetime.now().isoformat()
-                                    }
-                                    
-                                    # Update data
-                                    data.append(closed_trade)
-                                    save_data(data)
-                                    
-                                    # Mark as closed
-                                    holding['status'] = 'closed'
-                                    holding['close_price'] = close_price
-                                    holding['close_date'] = datetime.now().strftime("%Y-%m-%d")
-                                    save_holdings_data(holdings_data)
-                                    
-                                    st.success(f"✅ Position closed! Realized P&L: ${realized_pnl:.2f}")
-                                    st.balloons()
-                                    st.rerun()
-                else:
-                    st.info("📭 Tidak ada posisi terbuka. Tambahkan posisi baru di tab 'Add New Position'")
-                
-                # Show closed positions
-                closed_holdings = [h for h in holdings_data if h.get('status') == 'closed']
-                if closed_holdings:
-                    st.divider()
-                    st.markdown("### 📜 Closed Positions History")
-                    df_closed = pd.DataFrame(closed_holdings)
-                    display_cols = ['symbol', 'quantity', 'entry_price', 'close_price', 'close_date']
-                    df_closed_display = df_closed[display_cols].copy()
-                    df_closed_display.columns = ['Symbol', 'Quantity', 'Entry Price', 'Close Price', 'Close Date']
-                    st.dataframe(df_closed_display, use_container_width=True, hide_index=True)
-            else:
-                st.info("📭 Belum ada holdings. Mulai tambahkan posisi di tab 'Add New Position'")
     
     elif page == "Entry Balance":
         # Check if user is admin
