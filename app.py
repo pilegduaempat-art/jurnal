@@ -331,7 +331,7 @@ def main():
     initial_balance = load_balance_data()
     
     # Sidebar untuk navigasi
-    st.sidebar.title("📊 Portofolio - Overview PNL")
+    st.sidebar.title("📊 Trading Journal")
     
     # Show user role
     if st.session_state.user_role == "admin":
@@ -349,7 +349,7 @@ def main():
         st.rerun()
     
     if page == "Dashboard":
-        st.title("📈 Portfolio - Overview PNL")
+        st.title("📈 Profit and Loss Analysis")
         
         # Calculate statistics
         stats = calculate_statistics(data, futures_data)
