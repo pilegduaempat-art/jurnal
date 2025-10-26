@@ -797,7 +797,7 @@ def main():
             col9, col10 = st.columns(2)
             with col9:
                 st.metric("PNL Rate", f"{stats['win_rate']:.1f} %")
-                st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
+                st.metric("PNL Ratio", f"{stats['profit_loss_ratio']:.2f}")
             with col10:
                 st.metric("Best Trade", f"{stats['winning_days']} Days")
         else:
@@ -808,7 +808,7 @@ def main():
             with col10:
                 st.metric("Best Trade", f"{stats['winning_days']} Days")
             with col11:
-                st.metric("Profit/Loss Ratio", f"{stats['profit_loss_ratio']:.2f}")
+                st.metric("PNL Ratio", f"{stats['profit_loss_ratio']:.2f}")
         
         st.divider()
         
