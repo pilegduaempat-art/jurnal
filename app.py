@@ -1,1702 +1,919 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
+from datetime import datetime, date
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime, timedelta
-import calendar
-import json
-import os
+from plotly.subplots import make_subplots
+import hashlib
 
-# Konfigurasi halaman
-st.set_page_config(page_title="Trading Journal", layout="wide", initial_sidebar_state="collapsed")
+DB_PATH = "data.db"
 
-# CSS Custom
-st.markdown("""
-<style>
-    .main {
-        background-color: #1e1e2e;
-        color: #ffffff;
+# ----------------------- Page Config -----------------------
+st.set_page_config(
+    page_title="Investment Consortium Dashboard",
+    page_icon="💰",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ----------------------- Custom CSS -----------------------
+def load_css():
+    st.markdown("""
+    <style>
+    /* Main theme colors */
+    :root {
+        --primary-color: #1f77b4;
+        --secondary-color: #ff7f0e;
+        --success-color: #2ecc71;
+        --danger-color: #e74c3c;
+        --background-color: #f8f9fa;
     }
-    .stApp {
-        background-color: #1e1e2e;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 24px;
-        color: #ffffff;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #a0a0b0;
-        font-size: 14px;
-    }
-    .profit-card {
-        background-color: #2d2d3d;
-        padding: 20px;
-        border-radius: 10px;
-        margin: 10px 0;
-    }
-    h1, h2, h3 {
-        color: #ffffff !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #2d2d3d;
-        padding: 10px;
-        border-radius: 10px;
-        flex-wrap: wrap;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #a0a0b0;
-        font-weight: 600;
-        font-size: 14px;
-        padding: 8px 12px;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #fbbf24 !important;
-        border-bottom-color: #fbbf24 !important;
-    }
-    .portfolio-preview-card {
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Custom card styling */
+    .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 20px;
-        border-radius: 15px;
-        margin: 15px 0;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-    }
-    .portfolio-preview-card div[data-testid="stMetricValue"] {
-        font-size: 28px !important;
-        font-weight: 700 !important;
-        color: #ffffff !important;
-    }
-    .portfolio-preview-card div[data-testid="stMetricLabel"] {
-        font-size: 14px !important;
-        font-weight: 600 !important;
-        color: #f0f0f0 !important;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        color: white;
+        margin: 10px 0;
     }
     
-    /* Mobile Responsive Styles */
-    @media (max-width: 768px) {
-        div[data-testid="stMetricValue"] {
-            font-size: 20px !important;
-        }
-        div[data-testid="stMetricLabel"] {
-            font-size: 12px !important;
-        }
-        .portfolio-preview-card div[data-testid="stMetricValue"] {
-            font-size: 22px !important;
-        }
-        .portfolio-preview-card div[data-testid="stMetricLabel"] {
-            font-size: 12px !important;
-        }
-        .portfolio-preview-card {
-            padding: 15px;
-        }
-        h1 {
-            font-size: 24px !important;
-        }
-        h2 {
-            font-size: 20px !important;
-        }
-        h3 {
-            font-size: 18px !important;
-        }
-        .stTabs [data-baseweb="tab"] {
-            font-size: 12px;
-            padding: 6px 10px;
-        }
-        /* Stack columns on mobile */
-        div[data-testid="column"] {
-            min-width: 100% !important;
-        }
-    }
-    
-    /* Button improvements for mobile */
-    .stButton button {
-        width: 100%;
-        padding: 12px;
+    .metric-card h3 {
+        margin: 0;
         font-size: 14px;
+        font-weight: 500;
+        opacity: 0.9;
     }
     
-    /* Form improvements */
-    .stTextInput input, .stNumberInput input, .stTextArea textarea {
-        font-size: 16px !important;
+    .metric-card p {
+        margin: 10px 0 0 0;
+        font-size: 28px;
+        font-weight: 700;
     }
     
-    /* Sidebar improvements */
-    section[data-testid="stSidebar"] {
-        min-width: 250px;
+    /* Login card styling */
+    .login-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin: 2rem 0;
     }
     
-    @media (max-width: 768px) {
-        section[data-testid="stSidebar"] {
-            min-width: 200px;
-        }
+    /* Button styling */
+    .stButton>button {
+        border-radius: 8px;
+        border: none;
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
     }
-</style>
-""", unsafe_allow_html=True)
-
-# File untuk menyimpan data
-DATA_FILE = "trading_data.json"
-FUTURES_FILE = "futures_data.json"
-BALANCE_FILE = "balance_data.json"
-HOLDINGS_FILE = "holdings_data.json"
-
-# Load passwords from Streamlit secrets (production) or fallback (development)
-try:
-    ADMIN_PASSWORD = st.secrets["passwords"]["admin"]
-    GUEST_PASSWORD = st.secrets["passwords"]["guest"]
-except:
-    # Fallback for local development
-    ADMIN_PASSWORD = "000000"
-    GUEST_PASSWORD = "123456"
-    st.warning("⚠️ Using default passwords. Please configure secrets for production!")
-
-# Fungsi untuk load data
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            return json.load(f)
-    return []
-
-def load_futures_data():
-    if os.path.exists(FUTURES_FILE):
-        with open(FUTURES_FILE, 'r') as f:
-            return json.load(f)
-    return []
-
-def load_balance_data():
-    if os.path.exists(BALANCE_FILE):
-        with open(BALANCE_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('initial_balance', 0)
-    return 0
-
-def load_holdings_data():
-    if os.path.exists(HOLDINGS_FILE):
-        with open(HOLDINGS_FILE, 'r') as f:
-            return json.load(f)
-    return []
-
-# Fungsi untuk save data
-def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def save_futures_data(data):
-    with open(FUTURES_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def save_balance_data(balance):
-    with open(BALANCE_FILE, 'w') as f:
-        json.dump({'initial_balance': balance}, f, indent=2)
-
-def save_holdings_data(data):
-    with open(HOLDINGS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-# Fungsi autentikasi
-def check_password():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-        st.session_state.user_role = None
-        st.session_state.login_page = "select"  # select, admin, guest
     
-    if not st.session_state.authenticated:
-        # Landing page - pilih role
-        if st.session_state.login_page == "select":
-            st.title("🔐 Trading Journal Login")
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown("### Welcome to Trading Journal")
-                st.markdown("---")
-                
-                st.markdown("#### 👤 Login as Admin")
-                st.info("✅ Full access to all features\n\n✅ Add/Edit/Delete entries\n\n✅ Manage portfolio & holdings\n\n✅ View all analytics")
-                if st.button("🔑 Continue as Admin", use_container_width=True, type="primary"):
-                    st.session_state.login_page = "admin"
-                    st.rerun()
-                
-                st.markdown("---")
-                
-                st.markdown("#### 👁️ Login as Guest")
-                st.info("📊 View-only access\n\n📈 See dashboard & analytics\n\n🔒 Cannot modify data")
-                if st.button("👁️ Continue as Guest", use_container_width=True):
-                    st.session_state.login_page = "guest"
-                    st.rerun()
-        
-        # Admin login page
-        elif st.session_state.login_page == "admin":
-            st.title("🔑 Admin Login")
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown("### Administrator Access")
-                st.warning("⚠️ This area is for authorized administrators only")
-                
-                password = st.text_input("Admin Password", type="password", placeholder="Enter admin password", key="admin_pass")
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("🔓 Login", use_container_width=True, type="primary"):
-                        if password == ADMIN_PASSWORD:
-                            st.session_state.authenticated = True
-                            st.session_state.user_role = "admin"
-                            st.success("✅ Admin login successful!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid admin password!")
-                
-                with col_btn2:
-                    if st.button("⬅️ Back", use_container_width=True):
-                        st.session_state.login_page = "select"
-                        st.rerun()
-        
-        # Guest login page
-        elif st.session_state.login_page == "guest":
-            st.title("👁️ Guest Login")
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown("### Guest Access")
-                st.info("💡 Guest users have read-only access to view trading analytics and performance")
-                
-                password = st.text_input("Guest Password", type="password", placeholder="Enter guest password", key="guest_pass")
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("🔓 Login", use_container_width=True, type="primary"):
-                        if password == GUEST_PASSWORD:
-                            st.session_state.authenticated = True
-                            st.session_state.user_role = "guest"
-                            st.success("✅ Guest login successful!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid guest password!")
-                
-                with col_btn2:
-                    if st.button("⬅️ Back", use_container_width=True):
-                        st.session_state.login_page = "select"
-                        st.rerun()
-        
-        st.stop()
-
-# Fungsi untuk menghitung statistik
-def calculate_statistics(data, futures_data):
-    # Gabungkan data spot dan futures
-    all_data = data.copy()
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
     
-    if not all_data and not futures_data:
+    /* Input field styling */
+    .stTextInput>div>div>input, .stNumberInput>div>div>input {
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        padding: 0.5rem;
+    }
+    
+    /* DataFrame styling */
+    .dataframe {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
+    }
+    
+    [data-testid="stSidebar"] .stMarkdown {
+        color: white;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+    
+    /* Success/Error message styling */
+    .stSuccess, .stError, .stWarning, .stInfo {
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    /* Title styling */
+    h1 {
+        color: #2c3e50;
+        font-weight: 700;
+    }
+    
+    h2 {
+        color: #34495e;
+        font-weight: 600;
+        margin-top: 2rem;
+    }
+    
+    h3 {
+        color: #546e7a;
+        font-weight: 500;
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 10px 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ----------------------- Password Hashing -----------------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# ----------------------- Database helpers -----------------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        invested REAL NOT NULL,
+        join_date TEXT NOT NULL,
+        note TEXT,
+        password TEXT NOT NULL
+    )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS profits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        profit_date TEXT NOT NULL UNIQUE,
+        total_profit REAL NOT NULL,
+        note TEXT
+    )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS admin_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL
+    )""")
+    
+    # Create default admin if not exists
+    c.execute("SELECT COUNT(*) FROM admin_users WHERE username='admin'")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO admin_users (username, password) VALUES (?, ?)", 
+                 ("admin", hash_password("admin123")))
+    
+    conn.commit()
+    conn.close()
+
+def run_query(query, params=(), fetch=False):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(query, params)
+    if fetch:
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    conn.commit()
+    conn.close()
+
+# ----------------------- Authentication -----------------------
+def verify_admin(username, password):
+    rows = run_query("SELECT password FROM admin_users WHERE username=?", (username,), fetch=True)
+    if rows:
+        return rows[0][0] == hash_password(password)
+    return False
+
+def verify_client(client_id, password):
+    rows = run_query("SELECT password FROM clients WHERE id=?", (client_id,), fetch=True)
+    if rows:
+        return rows[0][0] == hash_password(password)
+    return False
+
+def get_client_by_id(client_id):
+    rows = run_query("SELECT id, name, invested, join_date, note FROM clients WHERE id=?", (client_id,), fetch=True)
+    if rows:
         return {
-            "total_profit": 0,
-            "total_loss": 0,
-            "net_pnl": 0,
-            "trading_volume": 0,
-            "win_rate": 0,
-            "winning_days": 0,
-            "losing_days": 0,
-            "breakeven_days": 0,
-            "avg_profit": 0,
-            "avg_loss": 0,
-            "profit_loss_ratio": 0
+            "id": rows[0][0],
+            "name": rows[0][1],
+            "invested": rows[0][2],
+            "join_date": rows[0][3],
+            "note": rows[0][4]
         }
+    return None
+
+# ----------------------- CRUD operations -----------------------
+def add_client(name, invested, join_date, note="", password=""):
+    hashed_pw = hash_password(password) if password else hash_password("client123")
+    run_query("INSERT INTO clients (name, invested, join_date, note, password) VALUES (?, ?, ?, ?, ?)", 
+              (name, invested, join_date, note, hashed_pw))
+
+def update_client(client_id, name, invested, join_date, note="", password=None):
+    if password:
+        run_query("UPDATE clients SET name=?, invested=?, join_date=?, note=?, password=? WHERE id=?", 
+                 (name, invested, join_date, note, hash_password(password), client_id))
+    else:
+        run_query("UPDATE clients SET name=?, invested=?, join_date=?, note=? WHERE id=?", 
+                 (name, invested, join_date, note, client_id))
+
+def delete_client(client_id):
+    run_query("DELETE FROM clients WHERE id=?", (client_id,))
+
+def list_clients_df():
+    rows = run_query("SELECT id, name, invested, join_date, note FROM clients ORDER BY id", fetch=True)
+    return pd.DataFrame(rows, columns=["id","name","invested","join_date","note"]) if rows else pd.DataFrame(columns=["id","name","invested","join_date","note"])
+
+def add_profit(profit_date, total_profit, note=""):
+    run_query("INSERT OR REPLACE INTO profits (profit_date, total_profit, note) VALUES (?, ?, ?)", 
+              (profit_date, total_profit, note))
+
+def update_profit(profit_id, profit_date, total_profit, note=""):
+    run_query("UPDATE profits SET profit_date=?, total_profit=?, note=? WHERE id=?", 
+              (profit_date, total_profit, note, profit_id))
+
+def delete_profit(profit_id):
+    run_query("DELETE FROM profits WHERE id=?", (profit_id,))
+
+def list_profits_df():
+    rows = run_query("SELECT id, profit_date, total_profit, note FROM profits ORDER BY profit_date", fetch=True)
+    return pd.DataFrame(rows, columns=["id","profit_date","total_profit","note"]) if rows else pd.DataFrame(columns=["id","profit_date","total_profit","note"])
+
+# ----------------------- Allocation & calculations -----------------------
+def allocations_for_date(target_date):
+    clients = list_clients_df()
+    if clients.empty:
+        return pd.DataFrame(columns=["id","name","invested","join_date","active","share","alloc_profit"])
+    clients["join_date"] = pd.to_datetime(clients["join_date"]).dt.date
+    target = datetime.strptime(target_date, "%Y-%m-%d").date()
+    clients["active"] = clients["join_date"] <= target
+    active_sum = clients.loc[clients["active"], "invested"].sum()
+    if active_sum == 0:
+        clients["share"] = 0.0
+    else:
+        clients["share"] = clients["invested"] / active_sum
+        clients.loc[~clients["active"], "share"] = 0.0
+    return clients
+
+def compute_client_timeseries():
+    profits = list_profits_df()
+    clients = list_clients_df()
+    if profits.empty or clients.empty:
+        return {}, profits, clients
+    profits["profit_date"] = pd.to_datetime(profits["profit_date"]).dt.date
+    clients["join_date"] = pd.to_datetime(clients["join_date"]).dt.date
+
+    profits = profits.sort_values("profit_date")
+    client_ids = clients["id"].tolist()
+    timeseries = {cid: [] for cid in client_ids}
+    dates = []
+    cum_gain = {cid: 0.0 for cid in client_ids}
+
+    for _, row in profits.iterrows():
+        d = row["profit_date"]
+        dates.append(d)
+        total_profit = row["total_profit"]
+        active = clients[clients["join_date"] <= d]
+        total_active = active["invested"].sum()
+        
+        if total_active == 0:
+            for cid in client_ids:
+                timeseries[cid].append(cum_gain[cid])
+        else:
+            for _, c in clients.iterrows():
+                cid = c["id"]
+                if c["join_date"] <= d:
+                    share = c["invested"] / total_active if total_active>0 else 0.0
+                    gain = total_profit * share
+                else:
+                    gain = 0.0
+                cum_gain[cid] += gain
+                timeseries[cid].append(cum_gain[cid])
     
-    # Tambahkan futures data ke dalam perhitungan
-    df_list = []
-    if all_data:
-        df_spot = pd.DataFrame(all_data)
-        df_spot['date'] = pd.to_datetime(df_spot['date'])
-        df_list.append(df_spot)
-    
-    if futures_data:
-        df_futures = pd.DataFrame(futures_data)
-        df_futures['date'] = pd.to_datetime(df_futures['date'])
-        df_list.append(df_futures)
-    
-    df = pd.concat(df_list, ignore_index=True) if df_list else pd.DataFrame()
-    
-    if len(df) == 0:
-        return {
-            "total_profit": 0,
-            "total_loss": 0,
-            "net_pnl": 0,
-            "trading_volume": 0,
-            "win_rate": 0,
-            "winning_days": 0,
-            "losing_days": 0,
-            "breakeven_days": 0,
-            "avg_profit": 0,
-            "avg_loss": 0,
-            "profit_loss_ratio": 0
+    result = {}
+    for _, c in clients.iterrows():
+        cid = c["id"]
+        invested = c["invested"]
+        gains = timeseries[cid] if len(timeseries[cid])>0 else []
+        pct = [(g / invested * 100) if invested>0 else 0.0 for g in gains]
+        result[cid] = {
+            "name": c["name"],
+            "invested": invested,
+            "join_date": c["join_date"],
+            "dates": dates,
+            "cumulative_gain": gains,
+            "pct_return": pct
         }
+    return result, profits, clients
+
+def get_client_timeseries(client_id):
+    """Get timeseries data for a specific client"""
+    result, profits, clients = compute_client_timeseries()
+    return result.get(client_id, None)
+
+# ----------------------- Dashboard Metrics -----------------------
+def get_dashboard_metrics():
+    clients = list_clients_df()
+    profits = list_profits_df()
     
-    # Hitung daily PNL
-    daily_pnl = df.groupby('date')['pnl'].sum().reset_index()
-    
-    profits = daily_pnl[daily_pnl['pnl'] > 0]['pnl']
-    losses = daily_pnl[daily_pnl['pnl'] < 0]['pnl']
-    
-    total_profit = profits.sum() if len(profits) > 0 else 0
-    total_loss = abs(losses.sum()) if len(losses) > 0 else 0
-    
-    winning_days = len(profits)
-    losing_days = len(losses)
-    breakeven_days = len(daily_pnl[daily_pnl['pnl'] == 0])
-    
-    total_days = len(daily_pnl)
-    win_rate = (winning_days / total_days * 100) if total_days > 0 else 0
-    
-    avg_profit = profits.mean() if len(profits) > 0 else 0
-    avg_loss = abs(losses.mean()) if len(losses) > 0 else 0
-    
-    profit_loss_ratio = (avg_profit / avg_loss) if avg_loss > 0 else 0
+    total_clients = len(clients)
+    total_invested = clients["invested"].sum() if not clients.empty else 0
+    total_profit = profits["total_profit"].sum() if not profits.empty else 0
+    avg_return = (total_profit / total_invested * 100) if total_invested > 0 else 0
     
     return {
+        "total_clients": total_clients,
+        "total_invested": total_invested,
         "total_profit": total_profit,
-        "total_loss": total_loss,
-        "net_pnl": total_profit - total_loss,
-        "trading_volume": df['volume'].sum() if 'volume' in df.columns else 0,
-        "win_rate": win_rate,
-        "winning_days": winning_days,
-        "losing_days": losing_days,
-        "breakeven_days": breakeven_days,
-        "avg_profit": avg_profit,
-        "avg_loss": avg_loss,
-        "profit_loss_ratio": profit_loss_ratio
+        "avg_return": avg_return
     }
 
-# Fungsi untuk membuat calendar view
-def create_calendar_view(data, year, month, title="Calendar View"):
-    if not data:
-        return None
+# ----------------------- Admin Panel -----------------------
+def admin_panel():
+    st.title("🔐 Admin Dashboard")
+    st.markdown("---")
     
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])
-    daily_pnl = df.groupby('date')['pnl'].sum().reset_index()
+    # Metrics Overview
+    metrics = get_dashboard_metrics()
     
-    # Filter by year and month
-    daily_pnl = daily_pnl[(daily_pnl['date'].dt.year == year) & 
-                          (daily_pnl['date'].dt.month == month)]
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <h3>👥 Total Clients</h3>
+            <p>{metrics['total_clients']}</p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Create calendar
-    cal = calendar.monthcalendar(year, month)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h3>💰 Total Invested</h3>
+            <p>Rp {metrics['total_invested']:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <h3>📈 Total Profit</h3>
+            <p>Rp {metrics['total_profit']:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <h3>📊 Avg Return</h3>
+            <p>{metrics['avg_return']:.2f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Tabs for better organization
+    tab1, tab2 = st.tabs(["👥 Client Management", "💹 Profit Management"])
+    
+    with tab1:
+        st.subheader("Client Management")
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            with st.expander("➕ Add New Client", expanded=True):
+                with st.form("add_client_form"):
+                    name = st.text_input("Client Name *")
+                    invested = st.number_input("Investment Amount (Rp) *", min_value=0.0, format="%.2f")
+                    join_date = st.date_input("Join Date *", value=date.today())
+                    password = st.text_input("Client Password *", type="password", help="Password for client login")
+                    note = st.text_area("Notes (optional)", height=100)
+                    submit = st.form_submit_button("💾 Add Client", use_container_width=True)
+                    
+                    if submit:
+                        if name and invested > 0 and password:
+                            add_client(name, float(invested), join_date.isoformat(), note, password)
+                            st.success(f"✅ Client '{name}' added successfully!")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ Please fill in all required fields including password")
+        
+        with col2:
+            clients_df = list_clients_df()
+            if not clients_df.empty:
+                st.markdown("### 📋 Current Clients")
+                
+                # Format the dataframe for better display
+                display_df = clients_df.copy()
+                display_df["invested"] = display_df["invested"].apply(lambda x: f"Rp {x:,.0f}")
+                display_df["join_date"] = pd.to_datetime(display_df["join_date"]).dt.strftime("%d %b %Y")
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    height=400,
+                    hide_index=True
+                )
+                
+                st.markdown("### ✏️ Edit / Delete Client")
+                edit_id = st.selectbox(
+                    "Select Client ID", 
+                    clients_df["id"].tolist(),
+                    format_func=lambda x: f"ID {x} - {clients_df[clients_df['id']==x]['name'].iloc[0]}"
+                )
+                
+                if edit_id:
+                    row = clients_df[clients_df["id"]==edit_id].iloc[0]
+                    
+                    with st.form("edit_client_form"):
+                        e_name = st.text_input("Name", value=row["name"])
+                        e_invested = st.number_input("Invested", value=float(row["invested"]), min_value=0.0)
+                        e_join = st.date_input("Join Date", value=pd.to_datetime(row["join_date"]).date())
+                        e_note = st.text_area("Note", value=row["note"], height=100)
+                        e_password = st.text_input("New Password (leave blank to keep current)", type="password")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            update = st.form_submit_button("💾 Update", use_container_width=True)
+                        with col2:
+                            delete = st.form_submit_button("🗑️ Delete", use_container_width=True, type="primary")
+                        
+                        if update:
+                            if e_password:
+                                update_client(edit_id, e_name, float(e_invested), e_join.isoformat(), e_note, e_password)
+                            else:
+                                update_client(edit_id, e_name, float(e_invested), e_join.isoformat(), e_note)
+                            st.success("✅ Client updated successfully!")
+                            st.rerun()
+                        
+                        if delete:
+                            delete_client(edit_id)
+                            st.success("✅ Client deleted successfully!")
+                            st.rerun()
+            else:
+                st.info("📭 No clients yet. Add your first client to get started!")
+    
+    with tab2:
+        st.subheader("Profit Management")
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            with st.expander("➕ Add Daily Profit", expanded=True):
+                with st.form("add_profit_form"):
+                    p_date = st.date_input("Profit Date *", value=date.today())
+                    p_total = st.number_input("Total Profit (Rp) *", value=0.0, format="%.2f")
+                    p_note = st.text_area("Notes (optional)", height=100)
+                    submit = st.form_submit_button("💾 Save Profit", use_container_width=True)
+                    
+                    if submit:
+                        add_profit(p_date.isoformat(), float(p_total), p_note)
+                        st.success(f"✅ Profit for {p_date.strftime('%d %b %Y')} saved!")
+                        st.rerun()
+        
+        with col2:
+            profits_df = list_profits_df()
+            if not profits_df.empty:
+                st.markdown("### 📊 Profit History")
+                
+                # Format the dataframe
+                display_df = profits_df.copy()
+                display_df["total_profit"] = display_df["total_profit"].apply(
+                    lambda x: f"Rp {x:,.0f}" if x >= 0 else f"-Rp {abs(x):,.0f}"
+                )
+                display_df["profit_date"] = pd.to_datetime(display_df["profit_date"]).dt.strftime("%d %b %Y")
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    height=400,
+                    hide_index=True
+                )
+                
+                st.markdown("### ✏️ Edit / Delete Profit Entry")
+                p_edit_id = st.selectbox(
+                    "Select Profit ID",
+                    profits_df["id"].tolist(),
+                    format_func=lambda x: f"ID {x} - {pd.to_datetime(profits_df[profits_df['id']==x]['profit_date'].iloc[0]).strftime('%d %b %Y')}"
+                )
+                
+                if p_edit_id:
+                    prow = profits_df[profits_df["id"]==p_edit_id].iloc[0]
+                    
+                    with st.form("edit_profit_form"):
+                        pe_date = st.date_input("Profit Date", value=pd.to_datetime(prow["profit_date"]).date())
+                        pe_total = st.number_input("Total Profit", value=float(prow["total_profit"]))
+                        pe_note = st.text_area("Note", value=prow["note"], height=100)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            update = st.form_submit_button("💾 Update", use_container_width=True)
+                        with col2:
+                            delete = st.form_submit_button("🗑️ Delete", use_container_width=True, type="primary")
+                        
+                        if update:
+                            update_profit(p_edit_id, pe_date.isoformat(), float(pe_total), pe_note)
+                            st.success("✅ Profit updated successfully!")
+                            st.rerun()
+                        
+                        if delete:
+                            delete_profit(p_edit_id)
+                            st.success("✅ Profit deleted successfully!")
+                            st.rerun()
+            else:
+                st.info("📭 No profit entries yet. Add your first entry to get started!")
+
+# ----------------------- Client Personal Dashboard -----------------------
+def client_dashboard(client_id):
+    client_data = get_client_by_id(client_id)
+    if not client_data:
+        st.error("Client data not found!")
+        return
+    
+    st.title(f"📊 Welcome, {client_data['name']}!")
+    st.markdown("---")
+    
+    # Get client-specific data
+    client_ts = get_client_timeseries(client_id)
+    profits_df = list_profits_df()
+    
+    if not client_ts or len(client_ts['dates']) == 0:
+        st.info("📭 No profit data available yet. Please wait for admin to add profit entries.")
+        
+        # Show basic info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h3>💰 Your Investment</h3>
+                <p>Rp {client_data['invested']:,.0f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h3>📅 Join Date</h3>
+                <p>{pd.to_datetime(client_data['join_date']).strftime('%d %b %Y')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        return
+    
+    # Calculate current values
+    current_gain = client_ts['cumulative_gain'][-1]
+    current_pct = client_ts['pct_return'][-1]
+    current_value = client_data['invested'] + current_gain
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <h3>💰 Initial Investment</h3>
+            <p>Rp {client_data['invested']:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h3>📈 Total Profit</h3>
+            <p>Rp {current_gain:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <h3>💎 Current Value</h3>
+            <p>Rp {current_value:,.0f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        color = "#43e97b" if current_pct >= 0 else "#e74c3c"
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, {color} 0%, {'#38f9d7' if current_pct >= 0 else '#c0392b'} 100%);">
+            <h3>📊 ROI</h3>
+            <p>{current_pct:+.2f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Performance Chart
+    st.subheader("📈 Your Investment Performance")
+    
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        chart_type = st.radio("Chart Type", ["Line", "Area"], horizontal=True)
     
     fig = go.Figure()
     
-    # Hari dalam seminggu
-    days = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-    
-    # Plot calendar grid
-    for week_idx, week in enumerate(cal):
-        for day_idx, day in enumerate(week):
-            if day == 0:
-                continue
-            
-            date = datetime(year, month, day)
-            pnl_data = daily_pnl[daily_pnl['date'] == date]
-            
-            if len(pnl_data) > 0:
-                pnl = pnl_data['pnl'].values[0]
-                color = '#166534' if pnl > 0 else '#991b1b' if pnl < 0 else '#374151'
-                text_color = '#10b981' if pnl > 0 else '#ef4444' if pnl < 0 else '#9ca3af'
-                pnl_text = f"+{pnl:.2f}" if pnl > 0 else f"{pnl:.2f}"
-            else:
-                color = '#2d2d3d'
-                text_color = '#ffffff'
-                pnl_text = ""
-            
-            # Draw cell
-            fig.add_shape(
-                type="rect",
-                x0=day_idx, y0=-week_idx,
-                x1=day_idx + 0.9, y1=-week_idx - 0.9,
-                fillcolor=color,
-                line=dict(color="#1e1e2e", width=2)
-            )
-            
-            # Add day number
-            fig.add_annotation(
-                x=day_idx + 0.15, y=-week_idx - 0.2,
-                text=str(day),
-                showarrow=False,
-                font=dict(size=16, color="#ffffff"),
-                xanchor="left",
-                yanchor="top"
-            )
-            
-            # Add PNL
-            if pnl_text:
-                fig.add_annotation(
-                    x=day_idx + 0.45, y=-week_idx - 0.6,
-                    text=pnl_text,
-                    showarrow=False,
-                    font=dict(size=12, color=text_color, family="monospace"),
-                    xanchor="center"
-                )
-    
-    # Add day headers
-    for idx, day in enumerate(days):
-        fig.add_annotation(
-            x=idx + 0.45, y=0.5,
-            text=day,
-            showarrow=False,
-            font=dict(size=14, color="#a0a0b0", weight="bold")
-        )
-    
-    fig.update_xaxes(range=[-0.5, 7], showgrid=False, zeroline=False, visible=False)
-    fig.update_yaxes(range=[-len(cal) - 0.5, 1], showgrid=False, zeroline=False, visible=False)
+    if chart_type == "Area":
+        fig.add_trace(go.Scatter(
+            x=client_ts['dates'],
+            y=client_ts['pct_return'],
+            mode='lines',
+            fill='tozeroy',
+            line=dict(width=2, color='#667eea'),
+            fillcolor='rgba(102, 126, 234, 0.3)',
+            hovertemplate='<b>Date:</b> %{x}<br><b>Return:</b> %{y:.2f}%<extra></extra>'
+        ))
+    else:
+        fig.add_trace(go.Scatter(
+            x=client_ts['dates'],
+            y=client_ts['pct_return'],
+            mode='lines+markers',
+            line=dict(width=3, color='#667eea'),
+            marker=dict(size=6, color='#667eea'),
+            hovertemplate='<b>Date:</b> %{x}<br><b>Return:</b> %{y:.2f}%<extra></extra>'
+        ))
     
     fig.update_layout(
-        height=500,
-        plot_bgcolor='#1e1e2e',
-        paper_bgcolor='#1e1e2e',
-        margin=dict(l=20, r=20, t=60, b=20),
-        showlegend=False,
-        title=dict(
-            text=title,
-            font=dict(size=18, color='#ffffff'),
-            x=0.5,
-            xanchor='center'
-        )
+        xaxis_title="Date",
+        yaxis_title="Return (%)",
+        hovermode='x',
+        template="plotly_white",
+        height=400,
+        showlegend=False
     )
     
-    return fig
-
-# Main App
-def main():
-    check_password()
+    st.plotly_chart(fig, use_container_width=True)
     
-    # Load data
-    data = load_data()
-    futures_data = load_futures_data()
-    initial_balance = load_balance_data()
-    holdings_data = load_holdings_data()
+    # Profit Distribution Table
+    st.markdown("---")
+    st.subheader("💼 Your Profit Distribution History")
     
-    # Sidebar untuk navigasi
-    st.sidebar.title("📊 Trading Journal")
-    
-    # Mobile view toggle (hidden checkbox for auto-detection via CSS)
-    # Detect mobile by checking viewport width via session state
-    if 'mobile_view' not in st.session_state:
-        st.session_state.mobile_view = False
-    
-    # Manual toggle for testing
-    with st.sidebar.expander("⚙️ Display Settings"):
-        mobile_mode = st.checkbox("Mobile View", value=st.session_state.mobile_view)
-        if mobile_mode != st.session_state.mobile_view:
-            st.session_state.mobile_view = mobile_mode
-            st.rerun()
-    
-    # Show user role
-    if st.session_state.user_role == "admin":
-        st.sidebar.success("👤 Logged in as: **Admin**")
-        page_options = ["Dashboard", "Entry Report - Spot", "Entry Report - Futures", "Holdings (Floating)", "Entry Balance", "Data Management"]
-    else:
-        st.sidebar.info("👁️ Logged in as: **Guest** (View Only)")
-        page_options = ["Dashboard"]
-    
-    page = st.sidebar.radio("Navigation", page_options)
-    
-    if st.sidebar.button("🚪 Logout"):
-        st.session_state.authenticated = False
-        st.session_state.user_role = None
-        st.rerun()
-    
-    if page == "Dashboard":
-        # Calculate statistics FIRST
-        stats = calculate_statistics(data, futures_data)
+    if not profits_df.empty:
+        allocations = []
+        profits_df_sorted = profits_df.sort_values("profit_date")
         
-        # Calculate total unrealized P&L from holdings
-        total_unrealized_pnl = 0
-        if holdings_data:
-            for holding in holdings_data:
-                if holding.get('status') == 'open':
-                    total_unrealized_pnl += holding.get('unrealized_pnl', 0)
-        
-        # Calculate portfolio value
-        realized_pnl = stats['net_pnl']
-        total_pnl = realized_pnl + total_unrealized_pnl
-        current_portfolio = initial_balance + total_pnl
-        portfolio_change_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
-        
-        # PORTFOLIO VALUE PREVIEW - MOVED TO TOP
-        st.markdown('<div class="portfolio-preview-card">', unsafe_allow_html=True)
-        st.markdown("# 💎 Portfolio Value Overview")
-        
-        # Responsive columns for mobile
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns layout
-            preview_col1, preview_col2 = st.columns(2)
-            with preview_col1:
-                st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
-                st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with preview_col2:
-                st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-                st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
-                         delta=f"{portfolio_change_pct:+.2f}%",
-                         delta_color="normal" if total_pnl >= 0 else "inverse")
-        else:
-            # Desktop: 4 columns layout
-            preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
-            with preview_col1:
-                st.metric("💰 Initial Balance", f"${initial_balance:,.2f}")
-            with preview_col2:
-                st.metric("📊 Realized P&L", f"${realized_pnl:,.2f}", 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-            with preview_col3:
-                st.metric("📈 Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with preview_col4:
-                st.metric("💼 Portfolio Value", f"${current_portfolio:,.2f}", 
-                         delta=f"{portfolio_change_pct:+.2f}%",
-                         delta_color="normal" if total_pnl >= 0 else "inverse")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # PORTFOLIO HISTORY CHART - NEW
-        st.subheader("📈 Portfolio Performance History")
-        
-        # Combine all data for portfolio history
-        portfolio_history = []
-        
-        # Get all dates from spot and futures
-        all_dates = set()
-        if data:
-            df_spot = pd.DataFrame(data)
-            df_spot['date'] = pd.to_datetime(df_spot['date'])
-            all_dates.update(df_spot['date'].dt.date.tolist())
-        
-        if futures_data:
-            df_futures = pd.DataFrame(futures_data)
-            df_futures['date'] = pd.to_datetime(df_futures['date'])
-            all_dates.update(df_futures['date'].dt.date.tolist())
-        
-        if all_dates:
-            # Sort dates
-            sorted_dates = sorted(list(all_dates))
+        for _, r in profits_df_sorted.iterrows():
+            date_str = str(r["profit_date"])
+            total_profit = r["total_profit"]
             
-            # Calculate cumulative portfolio value
-            cumulative_pnl = 0
-            for date in sorted_dates:
-                date_dt = pd.Timestamp(date)
+            # Get allocation for this date
+            allocs = allocations_for_date(date_str)
+            client_alloc = allocs[allocs["id"] == client_id]
+            
+            if not client_alloc.empty:
+                share = client_alloc.iloc[0]["share"]
+                allocated = total_profit * share
+                active = client_alloc.iloc[0]["active"]
                 
-                # Get PNL for this date from spot
-                if data:
-                    df_spot = pd.DataFrame(data)
-                    df_spot['date'] = pd.to_datetime(df_spot['date'])
-                    spot_pnl = df_spot[df_spot['date'].dt.date == date]['pnl'].sum()
-                else:
-                    spot_pnl = 0
-                
-                # Get PNL for this date from futures
-                if futures_data:
-                    df_futures = pd.DataFrame(futures_data)
-                    df_futures['date'] = pd.to_datetime(df_futures['date'])
-                    futures_pnl = df_futures[df_futures['date'].dt.date == date]['pnl'].sum()
-                else:
-                    futures_pnl = 0
-                
-                daily_pnl = spot_pnl + futures_pnl
-                cumulative_pnl += daily_pnl
-                
-                portfolio_history.append({
-                    'date': date,
-                    'daily_pnl': daily_pnl,
-                    'cumulative_pnl': cumulative_pnl,
-                    'portfolio_value': initial_balance + cumulative_pnl
+                allocations.append({
+                    "Date": pd.to_datetime(date_str).strftime("%d %b %Y"),
+                    "Total Profit": total_profit,
+                    "Your Share": f"{share*100:.2f}%",
+                    "Your Profit": allocated,
+                    "Status": "✅ Active" if active else "❌ Not Active"
                 })
+        
+        if allocations:
+            alloc_df = pd.DataFrame(allocations)
             
-            # Create DataFrame
-            df_portfolio = pd.DataFrame(portfolio_history)
-            
-            # Create line chart
-            fig_portfolio = go.Figure()
-            
-            # Add portfolio value line
-            fig_portfolio.add_trace(go.Scatter(
-                x=df_portfolio['date'],
-                y=df_portfolio['portfolio_value'],
-                mode='lines+markers',
-                name='Portfolio Value',
-                line=dict(color='#10b981', width=3),
-                marker=dict(size=6),
-                fill='tonexty',
-                fillcolor='rgba(16, 185, 129, 0.1)'
-            ))
-            
-            # Add initial balance reference line
-            fig_portfolio.add_hline(
-                y=initial_balance,
-                line_dash="dash",
-                line_color="#fbbf24",
-                annotation_text=f"Initial Balance: ${initial_balance:,.2f}",
-                annotation_position="right"
+            # Format display
+            display_df = alloc_df.copy()
+            display_df["Total Profit"] = display_df["Total Profit"].apply(
+                lambda x: f"Rp {x:,.0f}" if x >= 0 else f"-Rp {abs(x):,.0f}"
+            )
+            display_df["Your Profit"] = display_df["Your Profit"].apply(
+                lambda x: f"Rp {x:,.0f}" if x >= 0 else f"-Rp {abs(x):,.0f}"
             )
             
-            fig_portfolio.update_layout(
-                title="Daily Portfolio Value",
-                xaxis_title="Date",
-                yaxis_title="Portfolio Value (USD)",
-                plot_bgcolor='#1e1e2e',
-                paper_bgcolor='#1e1e2e',
-                font_color='#ffffff',
-                hovermode='x unified',
-                height=400
-            )
-            
-            st.plotly_chart(fig_portfolio, use_container_width=True)
-            
-            # Show stats - Responsive
-            if st.session_state.get('mobile_view', False):
-                # Mobile: 2 columns
-                col_stat1, col_stat2 = st.columns(2)
-                with col_stat1:
-                    max_portfolio = df_portfolio['portfolio_value'].max()
-                    st.metric("Peak Portfolio", f"${max_portfolio:,.0f}")
-                    best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
-                    st.metric("Best Day", f"+${best_day['daily_pnl']:,.0f}", 
-                             delta=best_day['date'].strftime('%m/%d'))
-                with col_stat2:
-                    min_portfolio = df_portfolio['portfolio_value'].min()
-                    st.metric("Lowest Portfolio", f"${min_portfolio:,.0f}")
-                    worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
-                    st.metric("Worst Day", f"${worst_day['daily_pnl']:,.0f}",
-                             delta=worst_day['date'].strftime('%m/%d'))
-            else:
-                # Desktop: 4 columns
-                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                with col_stat1:
-                    max_portfolio = df_portfolio['portfolio_value'].max()
-                    st.metric("Peak Portfolio", f"${max_portfolio:,.2f}")
-                with col_stat2:
-                    min_portfolio = df_portfolio['portfolio_value'].min()
-                    st.metric("Lowest Portfolio", f"${min_portfolio:,.2f}")
-                with col_stat3:
-                    best_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmax()]
-                    st.metric("Best Day", f"+${best_day['daily_pnl']:,.2f}", 
-                             delta=best_day['date'].strftime('%Y-%m-%d'))
-                with col_stat4:
-                    worst_day = df_portfolio.loc[df_portfolio['daily_pnl'].idxmin()]
-                    st.metric("Worst Day", f"${worst_day['daily_pnl']:,.2f}",
-                             delta=worst_day['date'].strftime('%Y-%m-%d'))
+            st.dataframe(display_df, use_container_width=True, height=400, hide_index=True)
         else:
-            st.info("📊 Belum ada data trading untuk menampilkan history portfolio")
-        
-        st.divider()
-        
-        # NOW SHOW MAIN TITLE
-        st.title("📈 Profit and Loss Analysis")
-        
-        # Top metrics - Responsive layout
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns per row
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Initial Balance", f"${initial_balance:,.0f}")
-                st.metric("Total Loss", f"${stats['total_loss']:.0f}",
-                         delta=None, delta_color="off")
-                st.metric("Unrealized P&L", f"${total_unrealized_pnl:.0f}",
-                         delta=None,
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-            with col2:
-                st.metric("Total Profit", f"${stats['total_profit']:.0f}", 
-                         delta=None, delta_color="off")
-                st.metric("Realized P&L", f"${realized_pnl:.0f}",
-                         delta=None, 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-                st.metric("Trading Volume", f"${stats['trading_volume']:,.0f}")
-        else:
-            # Desktop: 5 columns
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
-                st.metric("Initial Balance", f"{initial_balance:,.2f} USD")
-            with col2:
-                st.metric("Total Profit", f"{stats['total_profit']:.2f} USD", 
-                         delta=None, delta_color="off")
-            with col3:
-                st.metric("Total Loss", f"{stats['total_loss']:.2f} USD",
-                         delta=None, delta_color="off")
-            with col4:
-                st.metric("Realized P&L", f"{realized_pnl:.2f} USD",
-                         delta=None, 
-                         delta_color="normal" if realized_pnl >= 0 else "inverse")
-            with col5:
-                st.metric("Unrealized P&L", f"{total_unrealized_pnl:.2f} USD",
-                         delta=None,
-                         delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-        
-        st.divider()
-        
-        # Holdings Data Management
-        st.subheader("📊 Holdings Data")
-        if holdings_data:
-            open_pos = len([h for h in holdings_data if h.get('status') == 'open'])
-            closed_pos = len([h for h in holdings_data if h.get('status') == 'closed'])
-            st.info(f"Open Positions: **{open_pos}** | Closed Positions: **{closed_pos}**")
-            
-            df_holdings = pd.DataFrame(holdings_data)
-            st.dataframe(df_holdings, use_container_width=True, hide_index=True)
-            
-            # Admin only buttons
-            if st.session_state.user_role == "admin":
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🗑️ Clear Holdings Data", type="secondary", key="clear_holdings"):
-                        if st.session_state.get('confirm_delete_holdings', False):
-                            save_holdings_data([])
-                            st.session_state.confirm_delete_holdings = False
-                            st.success("Holdings data berhasil dihapus!")
-                            st.rerun()
-                        else:
-                            st.session_state.confirm_delete_holdings = True
-                            st.warning("Klik sekali lagi untuk konfirmasi")
-                
-                with col2:
-                    csv_holdings = df_holdings.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Holdings CSV",
-                        data=csv_holdings,
-                        file_name=f"holdings_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-        else:
-            st.info("Belum ada data holdings")
-        
-        st.divider()
-        
-        # Second row metrics - Responsive
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns
-            col5, col6 = st.columns(2)
-            with col5:
-                st.metric("Worst Trade", f"{stats['losing_days']} Days")
-                st.metric("Average Profit", f"${stats['avg_profit']:.0f}")
-            with col6:
-                st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
-                st.metric("Average Loss", f"${stats['avg_loss']:.0f}")
-        else:
-            # Desktop: 5 columns
-            col5, col6, col7, col8, col9 = st.columns(5)
-            with col5:
-                st.metric("Trading Volume", f"{stats['trading_volume']:,.2f}")
-            with col6:
-                st.metric("Worst Trade", f"{stats['losing_days']} Days")
-            with col7:
-                st.metric("Breakeven Days", f"{stats['breakeven_days']} Days")
-            with col8:
-                st.metric("Average Profit", f"{stats['avg_profit']:.2f} USD")
-            with col9:
-                st.metric("Average Loss", f"{stats['avg_loss']:.2f} USD")
-        
-        # Third row metrics - Responsive
-        if st.session_state.get('mobile_view', False):
-            # Mobile: 2 columns
-            col9, col10 = st.columns(2)
-            with col9:
-                st.metric("PNL Rate", f"{stats['win_rate']:.1f} %")
-                st.metric("PNL Ratio", f"{stats['profit_loss_ratio']:.2f}")
-            with col10:
-                st.metric("Best Trade", f"{stats['winning_days']} Days")
-        else:
-            # Desktop: 3 columns
-            col9, col10, col11 = st.columns(3)
-            with col9:
-                st.metric("PNL Rate", f"{stats['win_rate']:.2f} %")
-            with col10:
-                st.metric("Best Trade", f"{stats['winning_days']} Days")
-            with col11:
-                st.metric("PNL Ratio", f"{stats['profit_loss_ratio']:.2f}")
-        
-        st.divider()
-        
-        # Tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Details", "Symbol Analysis", "Funding & Transaction"])
-        
-        with tab1:
-            st.subheader("📅 Daily PNL")
-            
-            # Month/Year selector
-            col_date1, col_date2 = st.columns([1, 3])
-            with col_date1:
-                current_year = datetime.now().year
-                selected_year = st.selectbox("Year", range(current_year - 2, current_year + 2), 
-                                            index=2, key="year_select")
-            with col_date2:
-                current_month = datetime.now().month
-                selected_month = st.selectbox("Month", range(1, 13), 
-                                             index=current_month - 1, 
-                                             format_func=lambda x: calendar.month_name[x],
-                                             key="month_select")
-            
-            # Tabel Futures (di atas)
-            st.markdown("### 📊 Daily PNL (Futures)")
-            if futures_data:
-                df_futures = pd.DataFrame(futures_data)
-                df_futures['date'] = pd.to_datetime(df_futures['date'])
-                
-                # Filter by selected month and year
-                df_futures_filtered = df_futures[
-                    (df_futures['date'].dt.year == selected_year) & 
-                    (df_futures['date'].dt.month == selected_month)
-                ].copy()
-                
-                if len(df_futures_filtered) > 0:
-                    # Format display
-                    df_futures_display = df_futures_filtered.copy()
-                    df_futures_display['date'] = df_futures_display['date'].dt.strftime('%Y-%m-%d')
-                    df_futures_display['pnl'] = df_futures_display['pnl'].apply(lambda x: f"+{x:.2f}" if x > 0 else f"{x:.2f}")
-                    
-                    # Reorder columns
-                    display_cols = ['date', 'pnl', 'notes']
-                    df_futures_display = df_futures_display[display_cols]
-                    df_futures_display.columns = ['Trading Date', 'P&L (USD)', 'Notes']
-                    
-                    st.dataframe(df_futures_display, use_container_width=True, hide_index=True)
-                    
-                    # Summary
-                    total_futures_pnl = df_futures_filtered['pnl'].sum()
-                    st.metric("Total Futures P&L", f"{total_futures_pnl:.2f} USD", 
-                             delta=None, 
-                             delta_color="normal" if total_futures_pnl >= 0 else "inverse")
-                else:
-                    st.info("Tidak ada data futures untuk bulan ini")
-            else:
-                st.info("Belum ada data futures. Silakan tambahkan entry di 'Entry Report - Futures'")
-            
-            st.divider()
-            
-            # Calendar View - Futures
-            st.markdown("### 📅 Calendar View - Futures Trading")
-            if futures_data:
-                fig_futures = create_calendar_view(futures_data, selected_year, selected_month, "Futures Trading Calendar")
-                if fig_futures:
-                    st.plotly_chart(fig_futures, use_container_width=True)
-                else:
-                    st.info("Tidak ada data futures untuk bulan ini")
-            else:
-                st.info("Belum ada data futures")
-            
-            st.divider()
-            
-            # Calendar View - Spot
-            st.markdown("### 📅 Calendar View - Spot Trading")
-            if data:
-                fig_spot = create_calendar_view(data, selected_year, selected_month, "Spot Trading Calendar")
-                if fig_spot:
-                    st.plotly_chart(fig_spot, use_container_width=True)
-                else:
-                    st.info("Tidak ada data spot untuk bulan ini")
-            else:
-                st.info("Belum ada data spot")
-        
-        with tab2:
-            st.subheader("📋 Trading History")
-            
-            # CHART SECTION - NEW
-            st.markdown("### 📈 Performance Charts")
-            
-            # Create tabs for different charts
-            chart_tab1, chart_tab2, chart_tab3 = st.tabs(["💹 Futures P&L", "💰 Spot P&L", "📊 Floating P&L"])
-            
-            with chart_tab1:
-                st.markdown("#### Futures Trading Performance")
-                if futures_data:
-                    df_futures_chart = pd.DataFrame(futures_data)
-                    df_futures_chart['date'] = pd.to_datetime(df_futures_chart['date'])
-                    df_futures_chart = df_futures_chart.sort_values('date')
-                    
-                    # Calculate cumulative
-                    df_futures_chart['cumulative_pnl'] = df_futures_chart['pnl'].cumsum()
-                    
-                    # Create chart
-                    fig_futures = go.Figure()
-                    
-                    # Daily P&L bars
-                    colors = ['#10b981' if x > 0 else '#ef4444' for x in df_futures_chart['pnl']]
-                    fig_futures.add_trace(go.Bar(
-                        x=df_futures_chart['date'],
-                        y=df_futures_chart['pnl'],
-                        name='Daily P&L',
-                        marker_color=colors,
-                        yaxis='y'
-                    ))
-                    
-                    # Cumulative P&L line
-                    fig_futures.add_trace(go.Scatter(
-                        x=df_futures_chart['date'],
-                        y=df_futures_chart['cumulative_pnl'],
-                        name='Cumulative P&L',
-                        line=dict(color='#fbbf24', width=3),
-                        yaxis='y2'
-                    ))
-                    
-                    fig_futures.update_layout(
-                        title="Futures: Daily & Cumulative P&L",
-                        xaxis_title="Date",
-                        yaxis=dict(title="Daily P&L (USD)", side='left'),
-                        yaxis2=dict(title="Cumulative P&L (USD)", side='right', overlaying='y'),
-                        plot_bgcolor='#1e1e2e',
-                        paper_bgcolor='#1e1e2e',
-                        font_color='#ffffff',
-                        hovermode='x unified',
-                        height=400,
-                        legend=dict(x=0.01, y=0.99)
-                    )
-                    
-                    st.plotly_chart(fig_futures, use_container_width=True)
-                    
-                    # Stats
-                    col_f1, col_f2, col_f3 = st.columns(3)
-                    with col_f1:
-                        total_futures = df_futures_chart['pnl'].sum()
-                        st.metric("Total Futures P&L", f"${total_futures:,.2f}")
-                    with col_f2:
-                        avg_futures = df_futures_chart['pnl'].mean()
-                        st.metric("Average Daily P&L", f"${avg_futures:,.2f}")
-                    with col_f3:
-                        win_rate_futures = (df_futures_chart['pnl'] > 0).sum() / len(df_futures_chart) * 100
-                        st.metric("PNL Rate", f"{win_rate_futures:.1f}%")
-                else:
-                    st.info("Belum ada data futures untuk ditampilkan")
-            
-            with chart_tab2:
-                st.markdown("#### Spot Trading Performance")
-                if data:
-                    df_spot_chart = pd.DataFrame(data)
-                    df_spot_chart['date'] = pd.to_datetime(df_spot_chart['date'])
-                    
-                    # Group by date
-                    df_spot_daily = df_spot_chart.groupby('date')['pnl'].sum().reset_index()
-                    df_spot_daily = df_spot_daily.sort_values('date')
-                    
-                    # Calculate cumulative
-                    df_spot_daily['cumulative_pnl'] = df_spot_daily['pnl'].cumsum()
-                    
-                    # Create chart
-                    fig_spot = go.Figure()
-                    
-                    # Daily P&L bars
-                    colors = ['#10b981' if x > 0 else '#ef4444' for x in df_spot_daily['pnl']]
-                    fig_spot.add_trace(go.Bar(
-                        x=df_spot_daily['date'],
-                        y=df_spot_daily['pnl'],
-                        name='Daily P&L',
-                        marker_color=colors,
-                        yaxis='y'
-                    ))
-                    
-                    # Cumulative P&L line
-                    fig_spot.add_trace(go.Scatter(
-                        x=df_spot_daily['date'],
-                        y=df_spot_daily['cumulative_pnl'],
-                        name='Cumulative P&L',
-                        line=dict(color='#fbbf24', width=3),
-                        yaxis='y2'
-                    ))
-                    
-                    fig_spot.update_layout(
-                        title="Spot: Daily & Cumulative P&L",
-                        xaxis_title="Date",
-                        yaxis=dict(title="Daily P&L (USD)", side='left'),
-                        yaxis2=dict(title="Cumulative P&L (USD)", side='right', overlaying='y'),
-                        plot_bgcolor='#1e1e2e',
-                        paper_bgcolor='#1e1e2e',
-                        font_color='#ffffff',
-                        hovermode='x unified',
-                        height=400,
-                        legend=dict(x=0.01, y=0.99)
-                    )
-                    
-                    st.plotly_chart(fig_spot, use_container_width=True)
-                    
-                    # Stats
-                    col_s1, col_s2, col_s3 = st.columns(3)
-                    with col_s1:
-                        total_spot = df_spot_daily['pnl'].sum()
-                        st.metric("Total Spot P&L", f"${total_spot:,.2f}")
-                    with col_s2:
-                        avg_spot = df_spot_daily['pnl'].mean()
-                        st.metric("Average Daily P&L", f"${avg_spot:,.2f}")
-                    with col_s3:
-                        win_rate_spot = (df_spot_daily['pnl'] > 0).sum() / len(df_spot_daily) * 100
-                        st.metric("PNL Rate", f"{win_rate_spot:.1f}%")
-                else:
-                    st.info("Belum ada data spot untuk ditampilkan")
-            
-            with chart_tab3:
-                st.markdown("#### Floating Positions Performance")
-                if holdings_data:
-                    open_holdings = [h for h in holdings_data if h.get('status') == 'open']
-                    if open_holdings:
-                        df_float = pd.DataFrame(open_holdings)
-                        
-                        # Create chart - P&L by symbol
-                        fig_float = go.Figure()
-                        
-                        colors = ['#10b981' if x > 0 else '#ef4444' for x in df_float['unrealized_pnl']]
-                        fig_float.add_trace(go.Bar(
-                            x=df_float['symbol'],
-                            y=df_float['unrealized_pnl'],
-                            name='Unrealized P&L',
-                            marker_color=colors,
-                            text=df_float['unrealized_pnl'].apply(lambda x: f"${x:,.2f}"),
-                            textposition='outside'
-                        ))
-                        
-                        fig_float.update_layout(
-                            title="Floating: Unrealized P&L by Symbol",
-                            xaxis_title="Symbol",
-                            yaxis_title="Unrealized P&L (USD)",
-                            plot_bgcolor='#1e1e2e',
-                            paper_bgcolor='#1e1e2e',
-                            font_color='#ffffff',
-                            height=400
-                        )
-                        
-                        st.plotly_chart(fig_float, use_container_width=True)
-                        
-                        # Stats
-                        col_fl1, col_fl2, col_fl3 = st.columns(3)
-                        with col_fl1:
-                            total_float = df_float['unrealized_pnl'].sum()
-                            st.metric("Total Unrealized P&L", f"${total_float:,.2f}")
-                        with col_fl2:
-                            profitable = (df_float['unrealized_pnl'] > 0).sum()
-                            st.metric("Profitable Positions", f"{profitable}/{len(df_float)}")
-                        with col_fl3:
-                            total_value = (df_float['quantity'] * df_float['current_price']).sum()
-                            st.metric("Total Holdings Value", f"${total_value:,.2f}")
-                    else:
-                        st.info("Tidak ada posisi floating terbuka")
-                else:
-                    st.info("Belum ada data holdings untuk ditampilkan")
-            
-            st.divider()
-            
-            # EXISTING TABLES SECTION
-            st.markdown("### 📊 Detailed Data Tables")
-            
-            # Holdings/Open Positions
-            st.markdown("#### 📊 Open Positions (Floating)")
-            if holdings_data:
-                open_holdings = [h for h in holdings_data if h.get('status') == 'open']
-                if open_holdings:
-                    df_holdings = pd.DataFrame(open_holdings)
-                    # Format display
-                    display_cols = ['symbol', 'quantity', 'entry_price', 'current_price', 'unrealized_pnl', 'entry_date']
-                    df_holdings_display = df_holdings[display_cols].copy()
-                    df_holdings_display.columns = ['Symbol', 'Quantity', 'Entry Price', 'Current Price', 'Unrealized P&L', 'Entry Date']
-                    st.dataframe(df_holdings_display, use_container_width=True, hide_index=True)
-                    
-                    # Summary
-                    total_value = df_holdings['quantity'].sum() * df_holdings['current_price'].mean()
-                    st.metric("Total Holdings Value", f"${total_value:,.2f} USD")
-                else:
-                    st.info("Tidak ada posisi terbuka")
-            else:
-                st.info("Belum ada data holdings")
-            
-            st.divider()
-            
-            # Futures History
-            st.markdown("#### Futures Trading")
-            if futures_data:
-                df_futures = pd.DataFrame(futures_data)
-                df_futures['date'] = pd.to_datetime(df_futures['date']).dt.strftime('%Y-%m-%d')
-                st.dataframe(df_futures, use_container_width=True, hide_index=True)
-            else:
-                st.info("Belum ada data futures")
-            
-            st.divider()
-            
-            # Spot History (Closed Trades)
-            st.markdown("#### Spot Trading (Closed)")
-            if data:
-                df = pd.DataFrame(data)
-                df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
-                st.dataframe(df, use_container_width=True, hide_index=True)
-            else:
-                st.info("Belum ada data spot")
-        
-        with tab3:
-            st.subheader("📊 Symbol Analysis")
-            
-            # Combine data
-            all_data = []
-            if data:
-                df_spot = pd.DataFrame(data)
-                df_spot['type'] = 'Spot'
-                all_data.append(df_spot)
-            if futures_data:
-                df_futures = pd.DataFrame(futures_data)
-                if 'symbol' not in df_futures.columns:
-                    df_futures['symbol'] = 'Futures'
-                df_futures['type'] = 'Futures'
-                all_data.append(df_futures)
-            
-            if all_data:
-                df_combined = pd.concat(all_data, ignore_index=True)
-                
-                if 'symbol' in df_combined.columns:
-                    symbol_stats = df_combined.groupby('symbol').agg({
-                        'pnl': ['sum', 'mean', 'count']
-                    }).round(2)
-                    symbol_stats.columns = ['Total PNL', 'Avg PNL', 'Trades']
-                    st.dataframe(symbol_stats, use_container_width=True)
-                    
-                    # Chart
-                    fig = px.bar(symbol_stats.reset_index(), x='symbol', y='Total PNL',
-                                color='Total PNL',
-                                color_continuous_scale=['red', 'yellow', 'green'],
-                                title="PNL by Symbol")
-                    fig.update_layout(
-                        plot_bgcolor='#1e1e2e',
-                        paper_bgcolor='#1e1e2e',
-                        font_color='#ffffff'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Belum ada data")
-        
-        with tab4:
-            st.subheader("💰 Funding & Transaction Summary")
-            
-            # Combine data
-            all_data = []
-            if data:
-                df_spot = pd.DataFrame(data)
-                all_data.append(df_spot)
-            if futures_data:
-                df_futures = pd.DataFrame(futures_data)
-                if 'volume' in df_futures.columns:
-                    all_data.append(df_futures)
-            
-            if all_data:
-                df_combined = pd.concat(all_data, ignore_index=True)
-                
-                if 'volume' in df_combined.columns:
-                    total_volume = df_combined['volume'].sum()
-                    st.metric("Total Trading Volume", f"{total_volume:,.2f} USD")
-                    
-                    # Volume over time
-                    df_combined['date'] = pd.to_datetime(df_combined['date'])
-                    daily_volume = df_combined.groupby('date')['volume'].sum().reset_index()
-                    
-                    fig = px.line(daily_volume, x='date', y='volume',
-                                 title="Daily Trading Volume")
-                    fig.update_layout(
-                        plot_bgcolor='#1e1e2e',
-                        paper_bgcolor='#1e1e2e',
-                        font_color='#ffffff'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Belum ada data")
+            st.info("No profit distribution data available for your account yet.")
+
+# ----------------------- Login Pages -----------------------
+def admin_login_page():
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem;'>
+        <h1 style='color: #2c3e50; font-size: 3rem;'>🔐</h1>
+        <h1 style='color: #2c3e50;'>Admin Portal</h1>
+        <p style='color: #7f8c8d; font-size: 1.2rem;'>Secure Administrative Access</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    elif page == "Entry Report - Spot":
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("📝 Daily Trading Report Entry (Spot)")
-        
-        with st.form("entry_form"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                trade_date = st.date_input("Trading Date", datetime.now())
-                symbol = st.text_input("Symbol/Pair", placeholder="e.g., BTC/USD, EUR/USD")
-                entry_price = st.number_input("Entry Price", min_value=0.0, step=0.01)
-                exit_price = st.number_input("Exit Price", min_value=0.0, step=0.01)
-            
-            with col2:
-                position = st.selectbox("Position", ["Long", "Short"])
-                volume = st.number_input("Volume", min_value=0.0, step=0.01)
-                pnl = st.number_input("P&L (USD)", step=0.01)
-                notes = st.text_area("Notes", placeholder="Trading notes...")
-            
-            submitted = st.form_submit_button("💾 Save Entry", use_container_width=True)
-            
-            if submitted:
-                new_entry = {
-                    "date": trade_date.strftime("%Y-%m-%d"),
-                    "symbol": symbol,
-                    "position": position,
-                    "entry_price": entry_price,
-                    "exit_price": exit_price,
-                    "volume": volume,
-                    "pnl": pnl,
-                    "notes": notes,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                data.append(new_entry)
-                save_data(data)
-                st.success("✅ Entry berhasil disimpan!")
-                st.rerun()
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    elif page == "Entry Report - Futures":
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("📝 Daily Trading Report Entry (Futures)")
-        
-        with st.form("futures_entry_form"):
-            trade_date = st.date_input("Trading Date", datetime.now())
-            pnl = st.number_input("P&L (USD)", step=0.01)
-            notes = st.text_area("Notes", placeholder="Trading notes for futures...")
+    with col2:
+        with st.form("admin_login_form"):
+            st.markdown("### 🔑 Administrator Login")
+            username = st.text_input("Username", placeholder="Enter admin username")
+            password = st.text_input("Password", type="password", placeholder="Enter admin password")
+            submit = st.form_submit_button("🚀 Login as Admin", use_container_width=True)
             
-            submitted = st.form_submit_button("💾 Save Futures Entry", use_container_width=True)
-            
-            if submitted:
-                new_entry = {
-                    "date": trade_date.strftime("%Y-%m-%d"),
-                    "pnl": pnl,
-                    "notes": notes,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                futures_data.append(new_entry)
-                save_futures_data(futures_data)
-                st.success("✅ Futures entry berhasil disimpan!")
-                st.rerun()
-    
-    elif page == "Holdings (Floating)":
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("📊 Holdings Management (Floating Positions)")
-        
-        # Tabs for Add and View
-        tab1, tab2 = st.tabs(["➕ Add New Position", "📋 Manage Positions"])
-        
-        with tab1:
-            st.markdown("### Add New Holding Position")
-            
-            with st.form("holdings_form"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    symbol = st.text_input("Symbol/Pair", placeholder="e.g., BTC, ETH, BNB")
-                    quantity = st.number_input("Quantity", min_value=0.0, step=0.01)
-                    entry_price = st.number_input("Entry Price (USD)", min_value=0.0, step=0.01)
-                    entry_date = st.date_input("Entry Date", datetime.now())
-                
-                with col2:
-                    current_price = st.number_input("Current Price (USD)", min_value=0.0, step=0.01)
-                    notes = st.text_area("Notes", placeholder="Optional notes about this position...")
-                
-                # Calculate unrealized P&L
-                if quantity > 0 and entry_price > 0 and current_price > 0:
-                    cost_basis = quantity * entry_price
-                    current_value = quantity * current_price
-                    unrealized_pnl = current_value - cost_basis
-                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    
-                    st.divider()
-                    st.markdown("#### 💹 Position Summary")
-                    col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
-                    with col_sum1:
-                        st.metric("Cost Basis", f"${cost_basis:,.2f}")
-                    with col_sum2:
-                        st.metric("Current Value", f"${current_value:,.2f}")
-                    with col_sum3:
-                        st.metric("Unrealized P&L", f"${unrealized_pnl:,.2f}",
-                                 delta=f"{pnl_percent:+.2f}%",
-                                 delta_color="normal" if unrealized_pnl >= 0 else "inverse")
-                    with col_sum4:
-                        st.metric("Break Even Price", f"${entry_price:.2f}")
-                else:
-                    unrealized_pnl = 0
-                
-                submitted = st.form_submit_button("💾 Add Position", use_container_width=True)
-                
-                if submitted and symbol and quantity > 0 and entry_price > 0:
-                    new_holding = {
-                        "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "entry_price": entry_price,
-                        "current_price": current_price,
-                        "entry_date": entry_date.strftime("%Y-%m-%d"),
-                        "unrealized_pnl": unrealized_pnl,
-                        "status": "open",
-                        "notes": notes,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    holdings_data.append(new_holding)
-                    save_holdings_data(holdings_data)
-                    st.success("✅ Position berhasil ditambahkan!")
-                    st.rerun()
-        
-        with tab2:
-            st.markdown("### Current Holdings")
-            
-            if holdings_data:
-                open_holdings = [h for h in holdings_data if h.get('status') == 'open']
-                
-                if open_holdings:
-                    # Summary cards
-                    total_cost = sum(h['quantity'] * h['entry_price'] for h in open_holdings)
-                    total_current = sum(h['quantity'] * h['current_price'] for h in open_holdings)
-                    total_unrealized = total_current - total_cost
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Cost Basis", f"${total_cost:,.2f}")
-                    with col2:
-                        st.metric("Total Current Value", f"${total_current:,.2f}")
-                    with col3:
-                        st.metric("Total Unrealized P&L", f"${total_unrealized:,.2f}",
-                                 delta_color="normal" if total_unrealized >= 0 else "inverse")
-                    
-                    st.divider()
-                    
-                    # Display each holding with update/close options
-                    for idx, holding in enumerate(open_holdings):
-                        with st.expander(f"📊 {holding['symbol']} - Qty: {holding['quantity']} | Entry: ${holding['entry_price']:.2f}", expanded=False):
-                            col_info1, col_info2, col_info3 = st.columns(3)
-                            
-                            with col_info1:
-                                st.write(f"**Entry Date:** {holding['entry_date']}")
-                                st.write(f"**Cost Basis:** ${holding['quantity'] * holding['entry_price']:,.2f}")
-                            
-                            with col_info2:
-                                st.write(f"**Current Price:** ${holding['current_price']:.2f}")
-                                st.write(f"**Current Value:** ${holding['quantity'] * holding['current_price']:,.2f}")
-                            
-                            with col_info3:
-                                pnl = holding.get('unrealized_pnl', 0)
-                                pnl_pct = ((holding['current_price'] - holding['entry_price']) / holding['entry_price'] * 100) if holding['entry_price'] > 0 else 0
-                                st.metric("Unrealized P&L", f"${pnl:.2f}", delta=f"{pnl_pct:+.2f}%")
-                            
-                            if holding.get('notes'):
-                                st.info(f"📝 **Notes:** {holding['notes']}")
-                            
-                            st.divider()
-                            
-                            # Action tabs: Edit Position, Update Price, Close Position
-                            action_tab1, action_tab2, action_tab3 = st.tabs(["✏️ Edit Position", "🔄 Update Price", "✅ Close Position"])
-                            
-                            with action_tab1:
-                                st.markdown("**Edit Position Details**")
-                                with st.form(f"edit_form_{holding['id']}"):
-                                    col_edit1, col_edit2 = st.columns(2)
-                                    
-                                    with col_edit1:
-                                        edit_symbol = st.text_input("Symbol/Pair", value=holding['symbol'], key=f"edit_symbol_{holding['id']}")
-                                        edit_quantity = st.number_input("Quantity", min_value=0.0, value=float(holding['quantity']), step=0.01, key=f"edit_qty_{holding['id']}")
-                                        edit_entry_price = st.number_input("Entry Price (USD)", min_value=0.0, value=float(holding['entry_price']), step=0.01, key=f"edit_entry_{holding['id']}")
-                                    
-                                    with col_edit2:
-                                        # Convert entry_date string to datetime for date_input
-                                        entry_date_obj = datetime.strptime(holding['entry_date'], '%Y-%m-%d').date()
-                                        edit_entry_date = st.date_input("Entry Date", value=entry_date_obj, key=f"edit_date_{holding['id']}")
-                                        
-                                        edit_current_price = st.number_input("Current Price (USD)", min_value=0.0, value=float(holding['current_price']), step=0.01, key=f"edit_current_{holding['id']}")
-                                        edit_notes = st.text_area("Notes", value=holding.get('notes', ''), key=f"edit_notes_{holding['id']}")
-                                    
-                                    st.markdown("---")
-                                    st.markdown("**📊 Preview Changes**")
-                                    col_preview1, col_preview2, col_preview3 = st.columns(3)
-                                    with col_preview1:
-                                        new_cost = edit_quantity * edit_entry_price
-                                        st.metric("New Cost Basis", f"${new_cost:,.2f}")
-                                    with col_preview2:
-                                        new_current_value = edit_quantity * edit_current_price
-                                        st.metric("New Current Value", f"${new_current_value:,.2f}")
-                                    with col_preview3:
-                                        new_unrealized = new_current_value - new_cost
-                                        new_pnl_pct = ((edit_current_price - edit_entry_price) / edit_entry_price * 100) if edit_entry_price > 0 else 0
-                                        st.metric("New Unrealized P&L", f"${new_unrealized:,.2f}", 
-                                                 delta=f"{new_pnl_pct:+.2f}%",
-                                                 delta_color="normal" if new_unrealized >= 0 else "inverse")
-                                    
-                                    submitted_edit = st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
-                                    
-                                    if submitted_edit:
-                                        # Update holding data
-                                        holding['symbol'] = edit_symbol
-                                        holding['quantity'] = edit_quantity
-                                        holding['entry_price'] = edit_entry_price
-                                        holding['entry_date'] = edit_entry_date.strftime('%Y-%m-%d')
-                                        holding['current_price'] = edit_current_price
-                                        holding['notes'] = edit_notes
-                                        holding['unrealized_pnl'] = new_unrealized
-                                        
-                                        save_holdings_data(holdings_data)
-                                        st.success("✅ Position updated successfully!")
-                                        st.balloons()
-                                        st.rerun()
-                            
-                            with action_tab2:
-                                st.markdown("**Quick Update Current Market Price**")
-                                st.info("💡 Use this to quickly update the current market price without changing other details")
-                                
-                                new_price = st.number_input(
-                                    "Current Price (USD)",
-                                    min_value=0.0,
-                                    value=float(holding['current_price']),
-                                    step=0.01,
-                                    key=f"price_{holding['id']}"
-                                )
-                                
-                                # Show impact preview
-                                if new_price != holding['current_price']:
-                                    new_value = holding['quantity'] * new_price
-                                    new_pnl = new_value - (holding['quantity'] * holding['entry_price'])
-                                    st.warning(f"💹 New Unrealized P&L will be: **${new_pnl:,.2f}**")
-                                
-                                if st.button("🔄 Update Price", key=f"update_{holding['id']}", use_container_width=True, type="primary"):
-                                    holding['current_price'] = new_price
-                                    holding['unrealized_pnl'] = (holding['quantity'] * new_price) - (holding['quantity'] * holding['entry_price'])
-                                    save_holdings_data(holdings_data)
-                                    st.success("✅ Price updated!")
-                                    st.rerun()
-                            
-                            with action_tab3:
-                                st.markdown("**Close This Position**")
-                                st.warning("⚠️ This will move the position to closed trades and record the realized P&L")
-                                
-                                close_price = st.number_input(
-                                    "Close Position at Price (USD)",
-                                    min_value=0.0,
-                                    value=float(holding['current_price']),
-                                    step=0.01,
-                                    key=f"close_price_{holding['id']}"
-                                )
-                                
-                                # Preview close results
-                                preview_realized_pnl = (holding['quantity'] * close_price) - (holding['quantity'] * holding['entry_price'])
-                                preview_pnl_pct = ((close_price - holding['entry_price']) / holding['entry_price'] * 100) if holding['entry_price'] > 0 else 0
-                                
-                                st.markdown("**📊 Close Summary**")
-                                col_close1, col_close2, col_close3 = st.columns(3)
-                                with col_close1:
-                                    st.metric("Close Value", f"${holding['quantity'] * close_price:,.2f}")
-                                with col_close2:
-                                    st.metric("Cost Basis", f"${holding['quantity'] * holding['entry_price']:,.2f}")
-                                with col_close3:
-                                    st.metric("Realized P&L", f"${preview_realized_pnl:,.2f}",
-                                             delta=f"{preview_pnl_pct:+.2f}%",
-                                             delta_color="normal" if preview_realized_pnl >= 0 else "inverse")
-                                
-                                if st.button("✅ Confirm Close Position", key=f"close_{holding['id']}", type="primary", use_container_width=True):
-                                    # Calculate realized P&L
-                                    realized_pnl = (holding['quantity'] * close_price) - (holding['quantity'] * holding['entry_price'])
-                                    
-                                    # Add to closed trades
-                                    closed_trade = {
-                                        "date": datetime.now().strftime("%Y-%m-%d"),
-                                        "symbol": holding['symbol'],
-                                        "position": "Long",
-                                        "entry_price": holding['entry_price'],
-                                        "exit_price": close_price,
-                                        "volume": holding['quantity'] * close_price,
-                                        "pnl": realized_pnl,
-                                        "notes": f"Closed from holdings. Entry: {holding['entry_date']}. {holding.get('notes', '')}",
-                                        "timestamp": datetime.now().isoformat()
-                                    }
-                                    
-                                    # Update data
-                                    data.append(closed_trade)
-                                    save_data(data)
-                                    
-                                    # Mark as closed
-                                    holding['status'] = 'closed'
-                                    holding['close_price'] = close_price
-                                    holding['close_date'] = datetime.now().strftime("%Y-%m-%d")
-                                    holding['realized_pnl'] = realized_pnl
-                                    save_holdings_data(holdings_data)
-                                    
-                                    st.success(f"✅ Position closed! Realized P&L: ${realized_pnl:.2f}")
-                                    st.balloons()
-                                    st.rerun()
-                else:
-                    st.info("📭 Tidak ada posisi terbuka. Tambahkan posisi baru di tab 'Add New Position'")
-                
-                # Show closed positions
-                closed_holdings = [h for h in holdings_data if h.get('status') == 'closed']
-                if closed_holdings:
-                    st.divider()
-                    st.markdown("### 📜 Closed Positions History")
-                    df_closed = pd.DataFrame(closed_holdings)
-                    display_cols = ['symbol', 'quantity', 'entry_price', 'close_price', 'close_date']
-                    df_closed_display = df_closed[display_cols].copy()
-                    df_closed_display.columns = ['Symbol', 'Quantity', 'Entry Price', 'Close Price', 'Close Date']
-                    st.dataframe(df_closed_display, use_container_width=True, hide_index=True)
-            else:
-                st.info("📭 Belum ada holdings. Mulai tambahkan posisi di tab 'Add New Position'")
-    
-    elif page == "Entry Balance":
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("💰 Entry Initial Balance")
-        
-        # Show current balance
-        current_balance = load_balance_data()
-        
-        if current_balance > 0:
-            st.info(f"📊 Current Initial Balance: **${current_balance:,.2f} USD**")
-        else:
-            st.warning("⚠️ No initial balance set. Please enter your starting capital.")
-        
-        st.divider()
-        
-        with st.form("balance_form"):
-            st.markdown("### Set Initial Balance")
-            st.caption("This is your starting capital before any trading activity.")
-            
-            new_balance = st.number_input(
-                "Initial Balance (USD)", 
-                min_value=0.0, 
-                value=float(current_balance),
-                step=100.0,
-                help="Enter your starting capital amount"
-            )
-            
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.info("💡 **Tip**: Set this to your account balance before you started trading. Portfolio value will be calculated as: Initial Balance + Net P&L")
-            
-            submitted = st.form_submit_button("💾 Save Balance", use_container_width=True, type="primary")
-            
-            if submitted:
-                save_balance_data(new_balance)
-                st.success(f"✅ Initial balance updated to ${new_balance:,.2f} USD")
-                st.balloons()
-                st.rerun()
-        
-        st.divider()
-        
-        # Show portfolio calculation preview
-        st.markdown("### 📈 Portfolio Value Preview")
-        stats = calculate_statistics(data, futures_data)
-        
-        # Calculate unrealized P&L
-        total_unrealized_pnl = 0
-        if holdings_data:
-            for holding in holdings_data:
-                if holding.get('status') == 'open':
-                    total_unrealized_pnl += holding.get('unrealized_pnl', 0)
-        
-        realized_pnl = stats['net_pnl']
-        total_pnl = realized_pnl + total_unrealized_pnl
-        portfolio_value = new_balance + total_pnl
-        change_pct = ((total_pnl / new_balance) * 100) if new_balance > 0 else 0
-        
-        preview_col1, preview_col2, preview_col3, preview_col4 = st.columns(4)
-        with preview_col1:
-            st.metric("Initial Balance", f"${new_balance:,.2f}")
-        with preview_col2:
-            st.metric("Realized P&L", f"${realized_pnl:,.2f}", 
-                     delta_color="normal" if realized_pnl >= 0 else "inverse")
-        with preview_col3:
-            st.metric("Unrealized P&L", f"${total_unrealized_pnl:,.2f}",
-                     delta_color="normal" if total_unrealized_pnl >= 0 else "inverse")
-        with preview_col4:
-            st.metric("Portfolio Value", f"${portfolio_value:,.2f}", 
-                     delta=f"{change_pct:+.2f}%",
-                     delta_color="normal" if total_pnl >= 0 else "inverse")
-    
-    else:  # Data Management
-        # Check if user is admin
-        if st.session_state.user_role != "admin":
-            st.error("🚫 Access Denied. Admin only.")
-            st.stop()
-        
-        st.title("🗂️ Data Management")
-        
-        # Balance Data
-        st.subheader("💰 Balance Data")
-        initial_balance = load_balance_data()
-        if initial_balance > 0:
-            st.info(f"Current Initial Balance: **${initial_balance:,.2f} USD**")
-            if st.button("🗑️ Reset Balance", type="secondary", key="reset_balance"):
-                if st.session_state.get('confirm_reset_balance', False):
-                    save_balance_data(0)
-                    st.session_state.confirm_reset_balance = False
-                    st.success("Balance berhasil direset!")
+            if submit:
+                if verify_admin(username, password):
+                    st.session_state["user_type"] = "admin"
+                    st.session_state["username"] = username
+                    st.success("✅ Admin login successful! Redirecting...")
                     st.rerun()
                 else:
-                    st.session_state.confirm_reset_balance = True
-                    st.warning("Klik sekali lagi untuk konfirmasi")
+                    st.error("❌ Invalid admin credentials. Please try again.")
+        
+        with st.expander("ℹ️ Default Admin Credentials"):
+            st.code("Username: admin\nPassword: admin123")
+            st.warning("⚠️ Change default credentials in production!")
+
+def client_login_page():
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem;'>
+        <h1 style='color: #2c3e50; font-size: 3rem;'>👤</h1>
+        <h1 style='color: #2c3e50;'>Client Portal</h1>
+        <p style='color: #7f8c8d; font-size: 1.2rem;'>Access Your Investment Dashboard</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        # Get list of clients for dropdown
+        clients_df = list_clients_df()
+        
+        if clients_df.empty:
+            st.warning("⚠️ No clients registered yet. Please contact admin.")
+            return
+        
+        with st.form("client_login_form"):
+            st.markdown("### 🔑 Client Login")
+            
+            client_options = {row['id']: f"{row['name']} (ID: {row['id']})" 
+                            for _, row in clients_df.iterrows()}
+            
+            selected_id = st.selectbox(
+                "Select Your Account",
+                options=list(client_options.keys()),
+                format_func=lambda x: client_options[x]
+            )
+            
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            submit = st.form_submit_button("🚀 Login as Client", use_container_width=True)
+            
+            if submit:
+                if verify_client(selected_id, password):
+                    st.session_state["user_type"] = "client"
+                    st.session_state["client_id"] = selected_id
+                    client_name = clients_df[clients_df['id'] == selected_id].iloc[0]['name']
+                    st.session_state["client_name"] = client_name
+                    st.success(f"✅ Welcome, {client_name}! Redirecting...")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid password. Please try again.")
+        
+        with st.expander("ℹ️ Need Help?"):
+            st.info("If you forgot your password, please contact the administrator.")
+            st.info("Your Client ID can be found in communications from the administrator.")
+
+# ----------------------- Main Application -----------------------
+def main():
+    init_db()
+    load_css()
+    
+    # Initialize session state
+    if "user_type" not in st.session_state:
+        st.session_state["user_type"] = None
+    
+    # Sidebar Navigation
+    with st.sidebar:
+        st.markdown("""
+        <div style='text-align: center; padding: 1rem 0; color: white;'>
+            <h1 style='color: white; font-size: 2.5rem;'>💰</h1>
+            <h2 style='color: white;'>Investment Console</h2>
+            <hr style='border: 1px solid rgba(255,255,255,0.2); margin: 1rem 0;'>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Show current user status
+        if st.session_state["user_type"] == "admin":
+            st.success(f"✅ Logged in as Admin")
+            st.markdown(f"**User:** {st.session_state.get('username', 'Admin')}")
+            
+            if st.button("🚪 Logout", use_container_width=True):
+                st.session_state["user_type"] = None
+                st.session_state.pop("username", None)
+                st.rerun()
+                
+        elif st.session_state["user_type"] == "client":
+            st.success(f"✅ Logged in as Client")
+            st.markdown(f"**Name:** {st.session_state.get('client_name', 'Client')}")
+            st.markdown(f"**ID:** {st.session_state.get('client_id', 'N/A')}")
+            
+            if st.button("🚪 Logout", use_container_width=True):
+                st.session_state["user_type"] = None
+                st.session_state.pop("client_id", None)
+                st.session_state.pop("client_name", None)
+                st.rerun()
         else:
-            st.info("Balance belum diset. Kunjungi halaman 'Entry Balance'")
-        
-        st.divider()
-        
-        # Futures Data Management
-        st.subheader("Futures Data")
-        if futures_data:
-            df_futures = pd.DataFrame(futures_data)
-            st.dataframe(df_futures, use_container_width=True, hide_index=True)
+            st.info("👋 Please login to continue")
+            
+            st.markdown("### 🎯 Choose Login Type")
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🗑️ Clear Futures Data", type="secondary", key="clear_futures"):
-                    if st.session_state.get('confirm_delete_futures', False):
-                        save_futures_data([])
-                        st.session_state.confirm_delete_futures = False
-                        st.success("Futures data berhasil dihapus!")
-                        st.rerun()
-                    else:
-                        st.session_state.confirm_delete_futures = True
-                        st.warning("Klik sekali lagi untuk konfirmasi")
+                if st.button("🔐 Admin", use_container_width=True):
+                    st.session_state["login_page"] = "admin"
+                    st.rerun()
+            with col2:
+                if st.button("👤 Client", use_container_width=True):
+                    st.session_state["login_page"] = "client"
+                    st.rerun()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Quick Stats (visible to all)
+        if st.session_state["user_type"]:
+            metrics = get_dashboard_metrics()
+            st.markdown("### 📊 Quick Stats")
+            st.metric("Total Investors", metrics['total_clients'])
+            st.metric("Total Investment", 
+                     f"Rp {metrics['total_invested']/1000000:.1f}M" if metrics['total_invested'] >= 1000000 
+                     else f"Rp {metrics['total_invested']:,.0f}")
+            st.metric("Total Profit", 
+                     f"Rp {metrics['total_profit']/1000000:.1f}M" if abs(metrics['total_profit']) >= 1000000 
+                     else f"Rp {metrics['total_profit']:,.0f}")
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Footer
+        st.markdown("""
+        <div style='text-align: center; color: rgba(255,255,255,0.6); font-size: 0.8rem; padding: 1rem 0;'>
+            <hr style='border: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'>
+            <p>© 2025 Investment Consortium</p>
+            <p>Secure • Professional • Reliable</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Main Content Area - Route based on user type
+    if st.session_state["user_type"] is None:
+        # Show login page based on selection
+        login_page_type = st.session_state.get("login_page", "select")
+        
+        if login_page_type == "admin":
+            admin_login_page()
+        elif login_page_type == "client":
+            client_login_page()
+        else:
+            # Welcome page
+            st.markdown("""
+            <div style='text-align: center; padding: 3rem 0;'>
+                <h1 style='color: #2c3e50; font-size: 3.5rem;'>💰</h1>
+                <h1 style='color: #2c3e50; font-size: 2.5rem;'>Investment Consortium Dashboard</h1>
+                <p style='color: #7f8c8d; font-size: 1.3rem; margin-top: 1rem;'>
+                    Professional Investment Management Platform
+                </p>
+                <hr style='width: 50%; margin: 2rem auto; border: 1px solid #e0e0e0;'>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
             
             with col2:
-                csv_futures = df_futures.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Futures CSV",
-                    data=csv_futures,
-                    file_name=f"futures_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-        else:
-            st.info("Belum ada data futures")
+                st.markdown("### 🎯 Welcome!")
+                st.markdown("""
+                Choose your login type to access the platform:
+                
+                **🔐 Admin Portal**
+                - Manage client accounts
+                - Record daily profits/losses
+                - View comprehensive analytics
+                - Full system access
+                
+                **👤 Client Portal**
+                - View your investment performance
+                - Track returns and profits
+                - Access personal dashboard
+                - Download statements
+                """)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                st.info("👈 Please select your login type from the sidebar to continue")
+                
+    elif st.session_state["user_type"] == "admin":
+        admin_panel()
         
-        st.divider()
-        
-        # Spot Data Management
-        st.subheader("Spot Data")
-        if data:
-            df = pd.DataFrame(data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🗑️ Clear Spot Data", type="secondary", key="clear_spot"):
-                    if st.session_state.get('confirm_delete_spot', False):
-                        save_data([])
-                        st.session_state.confirm_delete_spot = False
-                        st.success("Spot data berhasil dihapus!")
-                        st.rerun()
-                    else:
-                        st.session_state.confirm_delete_spot = True
-                        st.warning("Klik sekali lagi untuk konfirmasi")
-            
-            with col2:
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Spot CSV",
-                    data=csv,
-                    file_name=f"spot_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-        else:
-            st.info("Belum ada data spot")
+    elif st.session_state["user_type"] == "client":
+        client_dashboard(st.session_state["client_id"])
 
 if __name__ == "__main__":
     main()
